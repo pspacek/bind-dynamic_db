@@ -45,6 +45,7 @@
 #include <isccc/result.h>
 
 #include <dns/dispatch.h>
+#include <dns/dynamic_db.h>
 #include <dns/name.h>
 #include <dns/result.h>
 #include <dns/view.h>
@@ -971,6 +972,8 @@ cleanup(void) {
 	 */
 	dlz_dlopen_clear();
 #endif
+
+	dns_dynamic_db_cleanup();
 
 	dns_name_destroy();
 
