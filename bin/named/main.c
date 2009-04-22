@@ -973,7 +973,7 @@ cleanup(void) {
 	dlz_dlopen_clear();
 #endif
 
-	dns_dynamic_db_cleanup();
+	dns_dynamic_db_cleanup(ISC_TRUE);
 
 	dns_name_destroy();
 

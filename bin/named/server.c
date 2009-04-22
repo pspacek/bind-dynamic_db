@@ -5016,6 +5016,7 @@ load_configuration(const char *filename, ns_server_t *server,
 		cfg_aclconfctx_detach(&ns_g_aclconfctx);
 	CHECK(cfg_aclconfctx_create(ns_g_mctx, &ns_g_aclconfctx));
 
+	dns_dynamic_db_cleanup(ISC_FALSE);
 	/*
 	 * Parse the global default pseudo-config file.
 	 */
@@ -6529,6 +6530,8 @@ loadconfig(ns_server_t *server) {
 static isc_result_t
 reload(ns_server_t *server) {
 	isc_result_t result;
+
+	dns_dynamic_db_cleanup(ISC_FALSE);
 	CHECK(loadconfig(server));
 
 	result = load_zones(server, ISC_FALSE);
