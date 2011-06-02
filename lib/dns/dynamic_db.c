@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2009  Red Hat, Inc.
+ * Copyright (C) 2008-2011  Red Hat, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -50,7 +50,8 @@
 
 
 typedef isc_result_t (*register_func_t)(isc_mem_t *mctx, const char *name,
-		const char * const *argv, dns_dyndb_arguments_t *dyndb_args);
+		const char * const *argv,
+		const dns_dyndb_arguments_t *dyndb_args);
 typedef void (*destroy_func_t)(void);
 
 typedef struct dyndb_implementation dyndb_implementation_t;
@@ -118,7 +119,7 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 	size_t module_size;
 	isc_buffer_t *module_buf = NULL;
 	isc_region_t module_region;
-	void *handle;
+	void *handle = NULL;
 	dyndb_implementation_t *imp;
 	register_func_t register_function = NULL;
 	destroy_func_t destroy_function = NULL;
@@ -219,7 +220,8 @@ unload_library(dyndb_implementation_t **impp)
 
 isc_result_t
 dns_dynamic_db_load(const char *libname, const char *name, isc_mem_t *mctx,
-		    const char * const *argv, dns_dyndb_arguments_t *dyndb_args)
+		    const char * const *argv,
+		    const dns_dyndb_arguments_t *dyndb_args)
 {
 	isc_result_t result;
 	dyndb_implementation_t *implementation = NULL;

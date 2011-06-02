@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2009  Red Hat, Inc.
+ * Copyright (C) 2008-2011  Red Hat, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -30,7 +30,7 @@
 
 isc_result_t dns_dynamic_db_load(const char *libname, const char *name,
 				 isc_mem_t *mctx, const char * const *argv,
-				 dns_dyndb_arguments_t *dyndb_args);
+				 const dns_dyndb_arguments_t *dyndb_args);
 
 void dns_dynamic_db_cleanup(isc_boolean_t exiting);
 
