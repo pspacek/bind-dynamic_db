@@ -6531,7 +6531,12 @@ static isc_result_t
 reload(ns_server_t *server) {
 	isc_result_t result;
 
+	/* Ensure there is no other access to the server */
+	result = isc_task_beginexclusive(server->task);
+	RUNTIME_CHECK(result == ISC_R_SUCCESS);
 	dns_dynamic_db_cleanup(ISC_FALSE);
+	isc_task_endexclusive(server->task);
+
 	CHECK(loadconfig(server));
 
 	result = load_zones(server, ISC_FALSE);
