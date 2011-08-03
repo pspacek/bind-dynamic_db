@@ -949,8 +949,6 @@ setup(void) {
 
 static void
 cleanup(void) {
-	dns_dynamic_db_cleanup(ISC_TRUE);
-
 	destroy_managers();
 
 	ns_server_destroy(&ns_g_server);
