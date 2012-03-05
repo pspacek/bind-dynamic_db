@@ -2424,37 +2424,6 @@ configure_view(dns_view_t *view, cfg_obj_t *config, cfg_obj_t *vconfig,
 	}
 
 	/*
-	 * Configure dynamic databases.
-	 */
-	dynamic_db_list = NULL;
-	if (voptions != NULL)
-	        (void)cfg_map_get(voptions, "dynamic-db", &dynamic_db_list);
-	else
-	        (void)cfg_map_get(config, "dynamic-db", &dynamic_db_list);
-	element = cfg_list_first(dynamic_db_list);
-	if (element != NULL) {
-	        dns_dyndb_arguments_t *args;
-
-	        args = dns_dyndb_arguments_create(mctx);
-	        if (args == NULL) {
-	                result = ISC_R_NOMEMORY;
-	                goto cleanup;
-	        }
-	        dns_dyndb_set_view(args, view);
-	        dns_dyndb_set_zonemgr(args, ns_g_server->zonemgr);
-	        dns_dyndb_set_task(args, ns_g_server->task);
-	        dns_dyndb_set_timermgr(args, ns_g_timermgr);
-	        while (element != NULL) {
-	                obj = cfg_listelt_value(element);
-	                CHECK(configure_dynamic_db(obj, mctx, args));
-
-	                element = cfg_list_next(element);
-	        }
-
-	        dns_dyndb_arguments_destroy(mctx, args);
-	}
-
-	/*
 	 * Obtain configuration parameters that affect the decision of whether
 	 * we can reuse/share an existing cache.
 	 */
@@ -3361,6 +3330,37 @@ configure_view(dns_view_t *view, cfg_obj_t *config, cfg_obj_t *vconfig,
 		}
 	} else
 		dns_view_setrootdelonly(view, ISC_FALSE);
+
+	/*
+	 * Configure dynamic databases.
+	 */
+	dynamic_db_list = NULL;
+	if (voptions != NULL)
+		(void)cfg_map_get(voptions, "dynamic-db", &dynamic_db_list);
+	else
+		(void)cfg_map_get(config, "dynamic-db", &dynamic_db_list);
+	element = cfg_list_first(dynamic_db_list);
+	if (element != NULL) {
+		dns_dyndb_arguments_t *args;
+
+		args = dns_dyndb_arguments_create(mctx);
+		if (args == NULL) {
+			result = ISC_R_NOMEMORY;
+			goto cleanup;
+		}
+		dns_dyndb_set_view(args, view);
+		dns_dyndb_set_zonemgr(args, ns_g_server->zonemgr);
+		dns_dyndb_set_task(args, ns_g_server->task);
+		dns_dyndb_set_timermgr(args, ns_g_timermgr);
+		while (element != NULL) {
+			obj = cfg_listelt_value(element);
+			CHECK(configure_dynamic_db(obj, mctx, args));
+
+			element = cfg_list_next(element);
+		}
+
+		dns_dyndb_arguments_destroy(mctx, args);
+	}
 
 	/*
 	 * Setup automatic empty zones.  If recursion is off then
