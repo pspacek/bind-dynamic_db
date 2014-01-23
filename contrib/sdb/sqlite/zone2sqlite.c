@@ -15,7 +15,7 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: zone2sqlite.c,v 1.2 2008/09/24 02:46:21 marka Exp $ */
+/* $Id: zone2sqlite.c,v 1.4 2010/08/16 05:32:44 marka Exp $ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +27,9 @@
 
 #include <dns/db.h>
 #include <dns/dbiterator.h>
+#include <isc/entropy.h>
 #include <dns/fixedname.h>
+#include <isc/hash.h>
 #include <dns/name.h>
 #include <dns/rdata.h>
 #include <dns/rdataset.h>
@@ -127,7 +129,7 @@ addrdata(dns_name_t *name, dns_ttl_t ttl, dns_rdata_t *rdata)
     dataarray[isc_buffer_usedlength(&b)] = 0;
     
     sql = sqlite3_mprintf(
-	"INSERT INTO %q (NAME, TTL, RDTYPE, RDATA)"
+	"INSERT INTO %Q (NAME, TTL, RDTYPE, RDATA)"
 	" VALUES ('%q', %d, '%q', '%q') ",
 	dbi.table,
 	namearray, ttl, typearray, dataarray);
@@ -157,6 +159,7 @@ main(int argc, char *argv[])
     dns_rdataset_t rdataset;
     dns_rdata_t rdata = DNS_RDATA_INIT;
     isc_mem_t *mctx = NULL;
+    isc_entropy_t *ectx = NULL;
     isc_buffer_t b;
     isc_result_t result;
 
@@ -173,15 +176,18 @@ main(int argc, char *argv[])
     
     dns_result_register();
     
-    mctx = NULL;
     result = isc_mem_create(0, 0, &mctx);
     check_result(result, "isc_mem_create");
+    result = isc_entropy_create(mctx, &ectx);
+    check_result(result, "isc_entropy_create");
+    result = isc_hash_create(mctx, ectx, DNS_NAME_MAXWIRE);
+    check_result(result, "isc_hash_create");
     
     isc_buffer_init(&b, porigin, strlen(porigin));
     isc_buffer_add(&b, strlen(porigin));
     dns_fixedname_init(&forigin);
     origin = dns_fixedname_name(&forigin);
-    result = dns_name_fromtext(origin, &b, dns_rootname, ISC_FALSE, NULL);
+    result = dns_name_fromtext(origin, &b, dns_rootname, 0, NULL);
     check_result(result, "dns_name_fromtext");
     
     db = NULL;
@@ -202,7 +208,7 @@ main(int argc, char *argv[])
 	closeandexit(1);
     }
     
-    sql = sqlite3_mprintf("DROP TABLE %q ", dbi.table);
+    sql = sqlite3_mprintf("DROP TABLE %Q ", dbi.table);
     printf("%s\n", sql);
     res = sqlite3_exec(dbi.db, sql, NULL, NULL, &errmsg);
     sqlite3_free(sql);
@@ -225,7 +231,7 @@ main(int argc, char *argv[])
 #endif
     
     sql = sqlite3_mprintf(
-	"CREATE TABLE %q "
+	"CREATE TABLE %Q "
 	"(NAME TEXT, TTL INTEGER, RDTYPE TEXT, RDATA TEXT) ",
 	dbi.table);
     printf("%s\n", sql);
@@ -293,6 +299,8 @@ main(int argc, char *argv[])
     
     dns_dbiterator_destroy(&dbiter);
     dns_db_detach(&db);
+    isc_hash_destroy();
+    isc_entropy_detach(&ectx);
     isc_mem_destroy(&mctx);
 
     closeandexit(0);

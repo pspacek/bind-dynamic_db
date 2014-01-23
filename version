@@ -1,10 +1,13 @@
-# $Id: version,v 1.43.12.2.2.1 2008/12/24 00:20:14 marka Exp $
+# $Id$
 # 
 # This file must follow /bin/sh rules.  It is imported directly via
 # configure.
 #
+PRODUCT=BIND
+DESCRIPTION="(Extended Support Version)"
 MAJORVER=9
-MINORVER=6
-PATCHVER=0
-RELEASETYPE=-P
-RELEASEVER=1
+MINORVER=9
+PATCHVER=5
+RELEASETYPE=rc
+RELEASEVER=2
+EXTENSIONS=

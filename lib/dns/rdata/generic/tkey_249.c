@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2007, 2009, 2011, 2012  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: tkey_249.c,v 1.57 2007/06/19 23:47:17 tbox Exp $ */
+/* $Id$ */
 
 /*
  * Reviewed: Thu Mar 16 17:35:30 PST 2000 by halley.
@@ -201,8 +201,11 @@ totext_tkey(ARGS_TOTEXT) {
 	if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(" (", target));
 	RETERR(str_totext(tctx->linebreak, target));
-	RETERR(isc_base64_totext(&dr, tctx->width - 2,
-				 tctx->linebreak, target));
+	if (tctx->width == 0)   /* No splitting */
+		RETERR(isc_base64_totext(&dr, 60, "", target));
+	else
+		RETERR(isc_base64_totext(&dr, tctx->width - 2,
+					 tctx->linebreak, target));
 	if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(" ) ", target));
 	else
@@ -227,8 +230,11 @@ totext_tkey(ARGS_TOTEXT) {
 	    if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		    RETERR(str_totext(" (", target));
 	    RETERR(str_totext(tctx->linebreak, target));
-	    RETERR(isc_base64_totext(&dr, tctx->width - 2,
-				     tctx->linebreak, target));
+		if (tctx->width == 0)   /* No splitting */
+			RETERR(isc_base64_totext(&dr, 60, "", target));
+		else
+			RETERR(isc_base64_totext(&dr, tctx->width - 2,
+						 tctx->linebreak, target));
 	    if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		    RETERR(str_totext(" )", target));
 	}
@@ -552,4 +558,8 @@ checknames_tkey(ARGS_CHECKNAMES) {
 	return (ISC_TRUE);
 }
 
+static inline isc_result_t
+casecompare_tkey(ARGS_COMPARE) {
+	return (compare_tkey(rdata1, rdata2));
+}
 #endif	/* RDATA_GENERIC_TKEY_249_C */

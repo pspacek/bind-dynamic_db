@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2007, 2009, 2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: a6_38.c,v 1.54 2007/06/19 23:47:17 tbox Exp $ */
+/* $Id: a6_38.c,v 1.56 2009/12/04 22:06:37 tbox Exp $ */
 
 /* RFC2874 */
 
@@ -122,7 +122,7 @@ totext_in_a6(ARGS_TOTEXT) {
 	if (prefixlen != 128) {
 		octets = prefixlen/8;
 		memset(addr, 0, sizeof(addr));
-		memcpy(&addr[octets], sr.base, 16 - octets);
+		memmove(&addr[octets], sr.base, 16 - octets);
 		mask = 0xff >> (prefixlen % 8);
 		addr[octets] &= mask;
 		ar.base = addr;
@@ -347,7 +347,7 @@ tostruct_in_a6(ARGS_TOSTRUCT) {
 	if (a6->prefixlen != 128) {
 		octets = 16 - a6->prefixlen / 8;
 		INSIST(r.length >= octets);
-		memcpy(a6->in6_addr.s6_addr + 16 - octets, r.base, octets);
+		memmove(a6->in6_addr.s6_addr + 16 - octets, r.base, octets);
 		isc_region_consume(&r, octets);
 	}
 
@@ -456,6 +456,11 @@ checknames_in_a6(ARGS_CHECKNAMES) {
 		return (ISC_FALSE);
 	}
 	return (ISC_TRUE);
+}
+
+static inline int
+casecompare_in_a6(ARGS_COMPARE) {
+	return (compare_in_a6(rdata1, rdata2));
 }
 
 #endif	/* RDATA_IN_1_A6_38_C */

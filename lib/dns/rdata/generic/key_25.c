@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2005, 2007, 2009, 2011-2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: key_25.c,v 1.51 2007/06/19 23:47:17 tbox Exp $ */
+/* $Id$ */
 
 /*
  * Reviewed: Wed Mar 15 16:47:10 PST 2000 by halley.
@@ -32,6 +32,7 @@
 
 static inline isc_result_t
 fromtext_key(ARGS_FROMTEXT) {
+	isc_result_t result;
 	isc_token_t token;
 	dns_secalg_t alg;
 	dns_secproto_t proto;
@@ -67,7 +68,15 @@ fromtext_key(ARGS_FROMTEXT) {
 	if ((flags & 0xc000) == 0xc000)
 		return (ISC_R_SUCCESS);
 
-	return (isc_base64_tobuffer(lexer, target, -1));
+	result = isc_base64_tobuffer(lexer, target, -1);
+	if (result != ISC_R_SUCCESS)
+		return (result);
+
+	/* Ensure there's at least enough data to compute a key ID for MD5 */
+	if (alg == DST_ALG_RSAMD5 && isc_buffer_usedlength(target) < 7)
+		return (ISC_R_UNEXPECTEDEND);
+
+	return (ISC_R_SUCCESS);
 }
 
 static inline isc_result_t
@@ -76,6 +85,7 @@ totext_key(ARGS_TOTEXT) {
 	char buf[sizeof("64000")];
 	unsigned int flags;
 	unsigned char algorithm;
+	char namebuf[DNS_NAME_FORMATSIZE];
 
 	REQUIRE(rdata->type == 25);
 	REQUIRE(rdata->length != 0);
@@ -105,14 +115,26 @@ totext_key(ARGS_TOTEXT) {
 	if ((flags & 0xc000) == 0xc000)
 		return (ISC_R_SUCCESS);
 
+	if ((tctx->flags & DNS_STYLEFLAG_RRCOMMENT) != 0 &&
+	     algorithm == DNS_KEYALG_PRIVATEDNS) {
+		dns_name_t name;
+		dns_name_init(&name, NULL);
+		dns_name_fromregion(&name, &sr);
+		dns_name_format(&name, namebuf, sizeof(namebuf));
+	} else
+		namebuf[0] = 0;
+
 	/* key */
 	if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(" (", target));
 	RETERR(str_totext(tctx->linebreak, target));
-	RETERR(isc_base64_totext(&sr, tctx->width - 2,
-				 tctx->linebreak, target));
+	if (tctx->width == 0)   /* No splitting */
+		RETERR(isc_base64_totext(&sr, 60, "", target));
+	else
+		RETERR(isc_base64_totext(&sr, tctx->width - 2,
+					 tctx->linebreak, target));
 
-	if ((tctx->flags & DNS_STYLEFLAG_COMMENT) != 0)
+	if ((tctx->flags & DNS_STYLEFLAG_RRCOMMENT) != 0)
 		RETERR(str_totext(tctx->linebreak, target));
 	else if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(" ", target));
@@ -120,19 +142,25 @@ totext_key(ARGS_TOTEXT) {
 	if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(")", target));
 
-	if ((tctx->flags & DNS_STYLEFLAG_COMMENT) != 0) {
+	if ((tctx->flags & DNS_STYLEFLAG_RRCOMMENT) != 0) {
 		isc_region_t tmpr;
 
 		RETERR(str_totext(" ; key id = ", target));
 		dns_rdata_toregion(rdata, &tmpr);
 		sprintf(buf, "%u", dst_region_computeid(&tmpr, algorithm));
 		RETERR(str_totext(buf, target));
+		if (algorithm == DNS_KEYALG_PRIVATEDNS) {
+			RETERR(str_totext(tctx->linebreak, target));
+			RETERR(str_totext("; alg = ", target));
+			RETERR(str_totext(namebuf, target));
+		}
 	}
 	return (ISC_R_SUCCESS);
 }
 
 static inline isc_result_t
 fromwire_key(ARGS_FROMWIRE) {
+	unsigned char algorithm;
 	isc_region_t sr;
 
 	REQUIRE(type == 25);
@@ -146,6 +174,27 @@ fromwire_key(ARGS_FROMWIRE) {
 	if (sr.length < 4)
 		return (ISC_R_UNEXPECTEDEND);
 
+	algorithm = sr.base[3];
+	RETERR(mem_tobuffer(target, sr.base, 4));
+	isc_region_consume(&sr, 4);
+	isc_buffer_forward(source, 4);
+
+	if (algorithm == DNS_KEYALG_PRIVATEDNS) {
+		dns_name_t name;
+		dns_decompress_setmethods(dctx, DNS_COMPRESS_NONE);
+		dns_name_init(&name, NULL);
+		RETERR(dns_name_fromwire(&name, source, dctx, options, target));
+	}
+
+	/*
+	 * RSAMD5 computes key ID differently from other
+	 * algorithms: we need to ensure there's enough data
+	 * present for the computation
+	 */
+	if (algorithm == DST_ALG_RSAMD5 && sr.length < 3)
+		return (ISC_R_UNEXPECTEDEND);
+
+	isc_buffer_activeregion(source, &sr);
 	isc_buffer_forward(source, sr.length);
 	return (mem_tobuffer(target, sr.base, sr.length));
 }
@@ -307,6 +356,11 @@ checknames_key(ARGS_CHECKNAMES) {
 	UNUSED(bad);
 
 	return (ISC_TRUE);
+}
+
+static inline int
+casecompare_key(ARGS_COMPARE) {
+	return (compare_key(rdata1, rdata2));
 }
 
 #endif	/* RDATA_GENERIC_KEY_25_C */

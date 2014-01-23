@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2007, 2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2005, 2007-2009, 2011-2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2001, 2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: db.c,v 1.88 2008/09/24 02:46:22 marka Exp $ */
+/* $Id: db.c,v 1.99.4.1 2011/10/23 20:12:07 vjs Exp $ */
 
 /*! \file */
 
@@ -33,11 +33,14 @@
 #include <isc/util.h>
 
 #include <dns/callbacks.h>
+#include <dns/clientinfo.h>
 #include <dns/db.h>
+#include <dns/dbiterator.h>
 #include <dns/log.h>
 #include <dns/master.h>
 #include <dns/rdata.h>
 #include <dns/rdataset.h>
+#include <dns/rdatasetiter.h>
 #include <dns/result.h>
 
 /***
@@ -61,14 +64,18 @@ struct dns_dbimplementation {
  */
 
 #include "rbtdb.h"
+#ifdef BIND9
 #include "rbtdb64.h"
+#endif
 
 static ISC_LIST(dns_dbimplementation_t) implementations;
 static isc_rwlock_t implock;
 static isc_once_t once = ISC_ONCE_INIT;
 
 static dns_dbimplementation_t rbtimp;
+#ifdef BIND9
 static dns_dbimplementation_t rbt64imp;
+#endif
 
 static void
 initialize(void) {
@@ -80,15 +87,19 @@ initialize(void) {
 	rbtimp.driverarg = NULL;
 	ISC_LINK_INIT(&rbtimp, link);
 
+#ifdef BIND9
 	rbt64imp.name = "rbt64";
 	rbt64imp.create = dns_rbtdb64_create;
 	rbt64imp.mctx = NULL;
 	rbt64imp.driverarg = NULL;
 	ISC_LINK_INIT(&rbt64imp, link);
+#endif
 
 	ISC_LIST_INIT(implementations);
 	ISC_LIST_APPEND(implementations, &rbtimp, link);
+#ifdef BIND9
 	ISC_LIST_APPEND(implementations, &rbt64imp, link);
+#endif
 }
 
 static inline dns_dbimplementation_t *
@@ -290,6 +301,7 @@ dns_db_class(dns_db_t *db) {
 	return (db->rdclass);
 }
 
+#ifdef BIND9
 isc_result_t
 dns_db_beginload(dns_db_t *db, dns_addrdatasetfunc_t *addp,
 		 dns_dbload_t **dbloadp) {
@@ -318,14 +330,19 @@ dns_db_endload(dns_db_t *db, dns_dbload_t **dbloadp) {
 
 isc_result_t
 dns_db_load(dns_db_t *db, const char *filename) {
-	return (dns_db_load2(db, filename, dns_masterformat_text));
+	return (dns_db_load3(db, filename, dns_masterformat_text, 0));
 }
 
 isc_result_t
 dns_db_load2(dns_db_t *db, const char *filename, dns_masterformat_t format) {
+	return (dns_db_load3(db, filename, format, 0));
+}
+
+isc_result_t
+dns_db_load3(dns_db_t *db, const char *filename, dns_masterformat_t format,
+	     unsigned int options) {
 	isc_result_t result, eresult;
 	dns_rdatacallbacks_t callbacks;
-	unsigned int options = 0;
 
 	/*
 	 * Load master file 'filename' into 'db'.
@@ -376,6 +393,7 @@ dns_db_dump2(dns_db_t *db, dns_dbversion_t *version, const char *filename,
 
 	return ((db->methods->dump)(db, version, filename, masterformat));
 }
+#endif /* BIND9 */
 
 /***
  *** Version Methods
@@ -461,7 +479,31 @@ dns_db_findnode(dns_db_t *db, dns_name_t *name,
 	REQUIRE(DNS_DB_VALID(db));
 	REQUIRE(nodep != NULL && *nodep == NULL);
 
-	return ((db->methods->findnode)(db, name, create, nodep));
+	if (db->methods->findnode != NULL)
+		return ((db->methods->findnode)(db, name, create, nodep));
+	else
+		return ((db->methods->findnodeext)(db, name, create,
+						   NULL, NULL, nodep));
+}
+
+isc_result_t
+dns_db_findnodeext(dns_db_t *db, dns_name_t *name,
+		   isc_boolean_t create, dns_clientinfomethods_t *methods,
+		   dns_clientinfo_t *clientinfo, dns_dbnode_t **nodep)
+{
+	/*
+	 * Find the node with name 'name', passing 'arg' to the database
+	 * implementation.
+	 */
+
+	REQUIRE(DNS_DB_VALID(db));
+	REQUIRE(nodep != NULL && *nodep == NULL);
+
+	if (db->methods->findnodeext != NULL)
+		return ((db->methods->findnodeext)(db, name, create,
+						   methods, clientinfo, nodep));
+	else
+		return ((db->methods->findnode)(db, name, create, nodep));
 }
 
 isc_result_t
@@ -485,7 +527,6 @@ dns_db_find(dns_db_t *db, dns_name_t *name, dns_dbversion_t *version,
 	    dns_dbnode_t **nodep, dns_name_t *foundname,
 	    dns_rdataset_t *rdataset, dns_rdataset_t *sigrdataset)
 {
-
 	/*
 	 * Find the best match for 'name' and 'type' in version 'version'
 	 * of 'db'.
@@ -502,8 +543,50 @@ dns_db_find(dns_db_t *db, dns_name_t *name, dns_dbversion_t *version,
 		(DNS_RDATASET_VALID(sigrdataset) &&
 		 ! dns_rdataset_isassociated(sigrdataset)));
 
-	return ((db->methods->find)(db, name, version, type, options, now,
-				    nodep, foundname, rdataset, sigrdataset));
+	if (db->methods->find != NULL)
+		return ((db->methods->find)(db, name, version, type,
+					    options, now, nodep, foundname,
+					    rdataset, sigrdataset));
+	else
+		return ((db->methods->findext)(db, name, version, type,
+					       options, now, nodep, foundname,
+					       NULL, NULL,
+					       rdataset, sigrdataset));
+}
+
+isc_result_t
+dns_db_findext(dns_db_t *db, dns_name_t *name, dns_dbversion_t *version,
+	       dns_rdatatype_t type, unsigned int options, isc_stdtime_t now,
+	       dns_dbnode_t **nodep, dns_name_t *foundname,
+	       dns_clientinfomethods_t *methods, dns_clientinfo_t *clientinfo,
+	       dns_rdataset_t *rdataset, dns_rdataset_t *sigrdataset)
+{
+
+	/*
+	 * Find the best match for 'name' and 'type' in version 'version'
+	 * of 'db', passing in 'arg'.
+	 */
+
+	REQUIRE(DNS_DB_VALID(db));
+	REQUIRE(type != dns_rdatatype_rrsig);
+	REQUIRE(nodep == NULL || (nodep != NULL && *nodep == NULL));
+	REQUIRE(dns_name_hasbuffer(foundname));
+	REQUIRE(rdataset == NULL ||
+		(DNS_RDATASET_VALID(rdataset) &&
+		 ! dns_rdataset_isassociated(rdataset)));
+	REQUIRE(sigrdataset == NULL ||
+		(DNS_RDATASET_VALID(sigrdataset) &&
+		 ! dns_rdataset_isassociated(sigrdataset)));
+
+	if (db->methods->findext != NULL)
+		return ((db->methods->findext)(db, name, version, type,
+					       options, now, nodep, foundname,
+					       methods, clientinfo,
+					       rdataset, sigrdataset));
+	else
+		return ((db->methods->find)(db, name, version, type,
+					    options, now, nodep, foundname,
+					    rdataset, sigrdataset));
 }
 
 isc_result_t
@@ -636,11 +719,6 @@ dns_db_findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 		    isc_stdtime_t now, dns_rdataset_t *rdataset,
 		    dns_rdataset_t *sigrdataset)
 {
-	/*
-	 * Search for an rdataset of type 'type' at 'node' that are in version
-	 * 'version' of 'db'.  If found, make 'rdataset' refer to it.
-	 */
-
 	REQUIRE(DNS_DB_VALID(db));
 	REQUIRE(node != NULL);
 	REQUIRE(DNS_RDATASET_VALID(rdataset));
@@ -651,8 +729,9 @@ dns_db_findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 		(DNS_RDATASET_VALID(sigrdataset) &&
 		 ! dns_rdataset_isassociated(sigrdataset)));
 
-	return ((db->methods->findrdataset)(db, node, version, type, covers,
-					    now, rdataset, sigrdataset));
+	return ((db->methods->findrdataset)(db, node, version, type,
+					    covers, now, rdataset,
+					    sigrdataset));
 }
 
 isc_result_t
@@ -854,12 +933,14 @@ dns_db_unregister(dns_dbimplementation_t **dbimp) {
 	RUNTIME_CHECK(isc_once_do(&once, initialize) == ISC_R_SUCCESS);
 
 	imp = *dbimp;
+	*dbimp = NULL;
 	RWLOCK(&implock, isc_rwlocktype_write);
 	ISC_LIST_UNLINK(implementations, imp, link);
 	mctx = imp->mctx;
 	isc_mem_put(mctx, imp, sizeof(dns_dbimplementation_t));
 	isc_mem_detach(&mctx);
 	RWUNLOCK(&implock, isc_rwlocktype_write);
+	ENSURE(*dbimp == NULL);
 }
 
 isc_result_t
@@ -919,8 +1000,28 @@ dns_db_getsigningtime(dns_db_t *db, dns_rdataset_t *rdataset, dns_name_t *name)
 }
 
 void
-dns_db_resigned(dns_db_t *db, dns_rdataset_t *rdataset, dns_dbversion_t *version)
+dns_db_resigned(dns_db_t *db, dns_rdataset_t *rdataset,
+		dns_dbversion_t *version)
 {
 	if (db->methods->resigned != NULL)
 		(db->methods->resigned)(db, rdataset, version);
+}
+
+isc_result_t
+dns_db_rpz_enabled(dns_db_t *db, dns_rpz_st_t *st)
+{
+	if (db->methods->rpz_enabled != NULL)
+		return ((db->methods->rpz_enabled)(db, st));
+	return (ISC_R_SUCCESS);
+}
+
+void
+dns_db_rpz_findips(dns_rpz_zone_t *rpz, dns_rpz_type_t rpz_type,
+		   dns_zone_t *zone, dns_db_t *db, dns_dbversion_t *version,
+		   dns_rdataset_t *ardataset, dns_rpz_st_t *st,
+		   dns_name_t *query_qname)
+{
+	if (db->methods->rpz_findips != NULL)
+		(db->methods->rpz_findips)(rpz, rpz_type, zone, db, version,
+					   ardataset, st, query_qname);
 }

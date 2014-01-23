@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2007, 2009, 2011-2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: log.c,v 1.94 2007/06/19 23:47:17 tbox Exp $ */
+/* $Id$ */
 
 /*! \file
  * \author  Principal Authors: DCL */
@@ -61,7 +61,7 @@
  * This is the structure that holds each named channel.  A simple linked
  * list chains all of the channels together, so an individual channel is
  * found by doing strcmp()s with the names down the list.  Their should
- * be no peformance penalty from this as it is expected that the number
+ * be no performance penalty from this as it is expected that the number
  * of named channels will be no more than a dozen or so, and name lookups
  * from the head of the list are only done when isc_log_usechannel() is
  * called, which should also be very infrequent.
@@ -128,7 +128,7 @@ struct isc_logconfig {
  * This isc_log structure provides the context for the isc_log functions.
  * The log context locks itself in isc_log_doit, the internal backend to
  * isc_log_write.  The locking is necessary both to provide exclusive access
- * to the the buffer into which the message is formatted and to guard against
+ * to the buffer into which the message is formatted and to guard against
  * competing threads trying to write to the same syslog resource.  (On
  * some systems, such as BSD/OS, stdio is thread safe but syslog is not.)
  * Unfortunately, the lock cannot guard against a _different_ logging
@@ -204,6 +204,7 @@ LIBISC_EXTERNAL_DATA isc_logmodule_t isc_modules[] = {
 	{ "time", 0 },
 	{ "interface", 0 },
 	{ "timer", 0 },
+	{ "file", 0 },
 	{ NULL, 0 }
 };
 
@@ -274,7 +275,8 @@ isc_log_create(isc_mem_t *mctx, isc_log_t **lctxp, isc_logconfig_t **lcfgp) {
 
 	lctx = isc_mem_get(mctx, sizeof(*lctx));
 	if (lctx != NULL) {
-		lctx->mctx = mctx;
+		lctx->mctx = NULL;
+		isc_mem_attach(mctx, &lctx->mctx);
 		lctx->categories = NULL;
 		lctx->category_count = 0;
 		lctx->modules = NULL;
@@ -285,7 +287,7 @@ isc_log_create(isc_mem_t *mctx, isc_log_t **lctxp, isc_logconfig_t **lcfgp) {
 
 		result = isc_mutex_init(&lctx->lock);
 		if (result != ISC_R_SUCCESS) {
-			isc_mem_put(mctx, lctx, sizeof(*lctx));
+			isc_mem_putanddetach(&mctx, lctx, sizeof(*lctx));
 			return (result);
 		}
 
@@ -492,7 +494,7 @@ isc_log_destroy(isc_log_t **lctxp) {
 	lctx->mctx = NULL;
 	lctx->magic = 0;
 
-	isc_mem_put(mctx, lctx, sizeof(*lctx));
+	isc_mem_putanddetach(&mctx, lctx, sizeof(*lctx));
 
 	*lctxp = NULL;
 }
@@ -765,7 +767,7 @@ isc_log_createchannel(isc_logconfig_t *lcfg, const char *name,
 		break;
 
 	default:
-		isc_mem_put(mctx, channel->name, strlen(channel->name) + 1);
+		isc_mem_free(mctx, channel->name);
 		isc_mem_put(mctx, channel, sizeof(*channel));
 		return (ISC_R_UNEXPECTED);
 	}
@@ -1128,7 +1130,7 @@ sync_channellist(isc_logconfig_t *lcfg) {
 	if (lcfg->channellist_count != 0) {
 		bytes = lcfg->channellist_count *
 			sizeof(ISC_LIST(isc_logchannellist_t));
-		memcpy(lists, lcfg->channellists, bytes);
+		memmove(lists, lcfg->channellists, bytes);
 		isc_mem_put(lctx->mctx, lcfg->channellists, bytes);
 	}
 
@@ -1144,7 +1146,7 @@ greatest_version(isc_logchannel_t *channel, int *greatestp) {
 	char *basename, *digit_end;
 	const char *dirname;
 	int version, greatest = -1;
-	unsigned int basenamelen;
+	size_t basenamelen;
 	isc_dir_t dir;
 	isc_result_t result;
 	char sep = '/';
@@ -1341,9 +1343,10 @@ isc_log_open(isc_logchannel_t *channel) {
 		    (FILE_MAXSIZE(channel) > 0 &&
 		     statbuf.st_size >= FILE_MAXSIZE(channel)))
 			roll = regular_file;
-	} else if (errno == ENOENT)
+	} else if (errno == ENOENT) {
 		regular_file = ISC_TRUE;
-	else
+		POST(regular_file);
+	} else
 		result = ISC_R_INVALIDFILE;
 
 	/*
@@ -1448,7 +1451,7 @@ isc_log_doit(isc_log_t *lctx, isc_logcategory_t *category,
 	LOCK(&lctx->lock);
 
 	lctx->buffer[0] = '\0';
-	
+
 	lcfg = lctx->logconfig;
 
 	category_channels = ISC_LIST_HEAD(lcfg->channellists[category->id]);
@@ -1507,7 +1510,7 @@ isc_log_doit(isc_log_t *lctx, isc_logcategory_t *category,
 		if ((channel->flags & ISC_LOG_PRINTTIME) != 0 &&
 		    time_string[0] == '\0') {
 			isc_time_t isctime;
-			
+
 			TIME_NOW(&isctime);
 			isc_time_formattimestamp(&isctime, time_string,
 						 sizeof(time_string));
@@ -1518,9 +1521,9 @@ isc_log_doit(isc_log_t *lctx, isc_logcategory_t *category,
 			if (level < ISC_LOG_CRITICAL)
 				snprintf(level_string, sizeof(level_string),
 					 isc_msgcat_get(isc_msgcat,
-						        ISC_MSGSET_LOG,
-						        ISC_MSG_LEVEL,
-						        "level %d: "),
+							ISC_MSGSET_LOG,
+							ISC_MSG_LEVEL,
+							"level %d: "),
 					 level);
 			else if (level > ISC_LOG_DYNAMIC)
 				snprintf(level_string, sizeof(level_string),
@@ -1700,8 +1703,8 @@ isc_log_doit(isc_log_t *lctx, isc_logcategory_t *category,
 				printcategory ? category->name	: "",
 				printcategory ? ": "		: "",
 				printmodule   ? (module != NULL ? module->name
-						 		: "no_module")
-					      			: "",
+								: "no_module")
+								: "",
 				printmodule   ? ": "		: "",
 				printlevel    ? level_string	: "",
 				lctx->buffer);
@@ -1743,8 +1746,8 @@ isc_log_doit(isc_log_t *lctx, isc_logcategory_t *category,
 			       printcategory ? category->name	: "",
 			       printcategory ? ": "		: "",
 			       printmodule   ? (module != NULL	? module->name
-						 		: "no_module")
-					      			: "",
+								: "no_module")
+								: "",
 			       printmodule   ? ": "		: "",
 			       printlevel    ? level_string	: "",
 			       lctx->buffer);

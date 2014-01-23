@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2010, 2012, 2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: message.h,v 1.125 2008/04/03 06:09:04 tbox Exp $ */
+/* $Id$ */
 
 #ifndef DNS_MESSAGE_H
 #define DNS_MESSAGE_H 1
@@ -81,8 +81,7 @@
  *	name = NULL;
  *	name = dns_message_gettempname(message, &name);
  *	dns_name_init(name, NULL);
- *	result = dns_name_fromtext(name, &source, dns_rootname, ISC_FALSE,
- *				   buffer);
+ *	result = dns_name_fromtext(name, &source, dns_rootname, 0, buffer);
  *	dns_message_takebuffer(message, &buffer);
  * \endcode
  *
@@ -106,6 +105,7 @@
 
 /*%< EDNS0 extended OPT codes */
 #define DNS_OPT_NSID		0x0003		/*%< NSID opt code */
+#define DNS_OPT_CLIENT_SUBNET	0x0008		/*%< client subnet opt code */
 
 #define DNS_MESSAGE_REPLYPRESERVE	(DNS_MESSAGEFLAG_RD|DNS_MESSAGEFLAG_CD)
 #define DNS_MESSAGEEXTFLAG_REPLYPRESERVE (DNS_MESSAGEEXTFLAG_DO)
@@ -137,6 +137,8 @@ typedef int dns_pseudosection_t;
 typedef int dns_messagetextflag_t;
 #define DNS_MESSAGETEXTFLAG_NOCOMMENTS	0x0001
 #define DNS_MESSAGETEXTFLAG_NOHEADERS	0x0002
+#define DNS_MESSAGETEXTFLAG_ONESOA	0x0004
+#define DNS_MESSAGETEXTFLAG_OMITSOA	0x0008
 
 /*
  * Dynamic update names for these sections.
@@ -161,7 +163,7 @@ typedef int dns_messagetextflag_t;
 						   occurs */
 #define DNS_MESSAGEPARSE_CLONEBUFFER	0x0004	/*%< save a copy of the
 						   source buffer */
-#define DNS_MESSAGEPARSE_IGNORETRUNCATION 0x0008 /*%< trucation errors are
+#define DNS_MESSAGEPARSE_IGNORETRUNCATION 0x0008 /*%< truncation errors are
 						  * not fatal. */
 
 /*
@@ -174,6 +176,9 @@ typedef int dns_messagetextflag_t;
 						      additional section. */
 #define DNS_MESSAGERENDER_PREFER_AAAA	0x0010	/*%< prefer AAAA records in
 						  additional section. */
+#ifdef ALLOW_FILTER_AAAA_ON_V4
+#define DNS_MESSAGERENDER_FILTER_AAAA	0x0020	/*%< filter AAAA records */
+#endif
 
 typedef struct dns_msgblock dns_msgblock_t;
 
@@ -245,6 +250,12 @@ struct dns_message {
 
 	dns_rdatasetorderfunc_t		order;
 	const void *			order_arg;
+};
+
+struct dns_ednsopt {
+	isc_uint16_t			code;
+	isc_uint16_t			length;
+	unsigned char			*value;
 };
 
 /***
@@ -368,6 +379,14 @@ dns_message_totext(dns_message_t *msg, const dns_master_style_t *style,
  *      with ";;" will be emitted indicating section name.  If
  *      #DNS_MESSAGETEXTFLAG_NOHEADERS is cleared, header lines will
  *      be emitted.
+ *
+ *	If #DNS_MESSAGETEXTFLAG_ONESOA is set then only print the
+ *	first SOA record in the answer section.  If
+ *	#DNS_MESSAGETEXTFLAG_OMITSOA is set don't print any SOA records
+ *	in the answer section.  These are useful for suppressing the
+ *	display of the second SOA record in a AXFR by setting
+ *	#DNS_MESSAGETEXTFLAG_ONESOA on the first message in a AXFR stream
+ *	and #DNS_MESSAGETEXTFLAG_OMITSOA on subsequent messages.
  *
  * Requires:
  *
@@ -1199,7 +1218,7 @@ dns_message_takebuffer(dns_message_t *msg, isc_buffer_t **buffer);
  *\li	msg be a valid message.
  *
  *\li	buffer != NULL && *buffer is a valid isc_buffer_t, which was
- *	dynamincally allocated via isc_buffer_allocate().
+ *	dynamically allocated via isc_buffer_allocate().
  */
 
 isc_result_t
@@ -1336,6 +1355,24 @@ dns_message_gettimeadjust(dns_message_t *msg);
  *
  * Requires:
  *\li	msg be a valid message.
+ */
+
+isc_result_t
+dns_message_buildopt(dns_message_t *msg, dns_rdataset_t **opt,
+		     unsigned int version, isc_uint16_t udpsize,
+		     unsigned int flags, dns_ednsopt_t *ednsopts, size_t count);
+/*%<
+ * Built a opt record.
+ *
+ * Requires:
+ * \li   msg be a valid message.
+ * \li   opt to be a non NULL and *opt to be NULL.
+ *
+ * Returns:
+ * \li	 ISC_R_SUCCESS on success.
+ * \li	 ISC_R_NOMEMORY
+ * \li	 ISC_R_NOSPACE
+ * \li	 other.
  */
 
 ISC_LANG_ENDDECLS

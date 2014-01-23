@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright (C) 2005-2007  Internet Systems Consortium, Inc. ("ISC")
+# Copyright (C) 2005-2007, 2011, 2012  Internet Systems Consortium, Inc. ("ISC")
 #
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +14,7 @@
 # OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-# $Id: tests.sh,v 1.5 2007/06/19 23:47:06 tbox Exp $
+# $Id: tests.sh,v 1.7 2011/11/06 23:46:40 tbox Exp $
 
 SYSTEMTESTTOP=..
 . $SYSTEMTESTTOP/conf.sh
@@ -213,6 +213,26 @@ if [ $ret -eq 1 ] ; then
 	echo "I: failed"; status=1
 fi
 
+echo "I:attempting fetch with bad tsig algorithm"
+ret=0
+$DIG +tcp +nosea +nostat +noquest +nocomm +nocmd example.nil.\
+	-y "badalgo:invalid:$sha512" @10.53.0.1 soa -p 5300 > dig.out.badalgo 2>&1 || ret=1
+grep -i "Couldn't create key invalid: algorithm is unsupported" dig.out.badalgo > /dev/null || ret=1
+if [ $ret -eq 1 ] ; then
+	echo "I: failed"; status=1
+fi
+
+echo "I:checking both OPT and TSIG records are returned when TC=1"
+ret=0
+$DIG +ignore +bufsize=512 large.example.nil \
+	-y "hmac-sha1:sha1:$sha1" @10.53.0.1 txt -p 5300 > dig.out.large 2>&1 || ret=1
+grep "flags:.* tc[ ;]" dig.out.large > /dev/null || ret=1
+grep "status: NOERROR" dig.out.large > /dev/null || ret=1
+grep "EDNS:" dig.out.large > /dev/null || ret=1
+grep -i "sha1.*TSIG.*NOERROR" dig.out.sha1 > /dev/null || ret=1
+if [ $ret -eq 1 ] ; then
+	echo "I: failed"; status=1
+fi
 exit $status
 
 

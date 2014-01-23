@@ -1,7 +1,7 @@
-.\" Copyright (C) 2004-2008 Internet Systems Consortium, Inc. ("ISC")
+.\" Copyright (C) 2004-2011, 2013 Internet Systems Consortium, Inc. ("ISC")
 .\" Copyright (C) 2000-2003 Internet Software Consortium.
 .\" 
-.\" Permission to use, copy, modify, and distribute this software for any
+.\" Permission to use, copy, modify, and/or distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
 .\" copyright notice and this permission notice appear in all copies.
 .\" 
@@ -13,18 +13,18 @@
 .\" OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 .\" PERFORMANCE OF THIS SOFTWARE.
 .\"
-.\" $Id: dig.1,v 1.50 2008/10/14 01:11:35 tbox Exp $
+.\" $Id$
 .\"
 .hy 0
 .ad l
 .\"     Title: dig
 .\"    Author: 
 .\" Generator: DocBook XSL Stylesheets v1.71.1 <http://docbook.sf.net/>
-.\"      Date: Jun 30, 2000
+.\"      Date: June 30, 2000
 .\"    Manual: BIND9
 .\"    Source: BIND9
 .\"
-.TH "DIG" "1" "Jun 30, 2000" "BIND9" "BIND9"
+.TH "DIG" "1" "June 30, 2000" "BIND9" "BIND9"
 .\" disable hyphenation
 .nh
 .\" disable justification (adjust text to left margin only)
@@ -57,7 +57,9 @@ allows multiple lookups to be issued from the command line.
 Unless it is told to query a specific name server,
 \fBdig\fR
 will try each of the servers listed in
-\fI/etc/resolv.conf\fR.
+\fI/etc/resolv.conf\fR. If no usable server addresses are found,
+\fBdig\fR
+will send the query to the local host.
 .PP
 When no command line arguments or options are given,
 \fBdig\fR
@@ -95,13 +97,20 @@ is the name or IP address of the name server to query. This can be an IPv4 addre
 \fIserver\fR
 argument is a hostname,
 \fBdig\fR
-resolves that name before querying that name server. If no
+resolves that name before querying that name server.
+.sp
+If no
 \fIserver\fR
 argument is provided,
 \fBdig\fR
 consults
-\fI/etc/resolv.conf\fR
-and queries the name servers listed there. The reply from the name server that responds is displayed.
+\fI/etc/resolv.conf\fR; if an address is found there, it queries the name server at that address. If either of the
+\fB\-4\fR
+or
+\fB\-6\fR
+options are in use, then only addresses for the corresponding transport will be tried. If no usable addresses are found,
+\fBdig\fR
+will send the query to the local host. The reply from the name server that responds is displayed.
 .RE
 .PP
 \fBname\fR
@@ -291,7 +300,7 @@ A synonym for
 .PP
 \fB+[no]adflag\fR
 .RS 4
-Set [do not set] the AD (authentic data) bit in the query. The AD bit currently has a standard meaning only in responses, not in queries, but the ability to set the bit in the query is provided for completeness.
+Set [do not set] the AD (authentic data) bit in the query. This requests the server to return whether all of the answer and authority sections have all been validated as secure according to the security policy of the server. AD=1 indicates that all records have been validated as secure and the answer is not from a OPT\-OUT range. AD=0 indicate that some part of the answer was insecure or not validated. This bit is set by default.
 .RE
 .PP
 \fB+[no]cdflag\fR
@@ -332,6 +341,9 @@ attempts to find the authoritative name servers for the zone containing the name
 Toggle tracing of the delegation path from the root name servers for the name being looked up. Tracing is disabled by default. When tracing is enabled,
 \fBdig\fR
 makes iterative queries to resolve the name being looked up. It will follow referrals from the root servers, showing the answer from each server that was used to resolve the lookup.
+.sp
+\fB+dnssec\fR
+is also set when +trace is set to better emulate the default queries from a nameserver.
 .RE
 .PP
 \fB+[no]cmd\fR
@@ -356,6 +368,24 @@ option is enabled. If short form answers are requested, the default is not to sh
 \fB+[no]comments\fR
 .RS 4
 Toggle the display of comment lines in the output. The default is to print comments.
+.RE
+.PP
+\fB+[no]rrcomments\fR
+.RS 4
+Toggle the display of per\-record comments in the output (for example, human\-readable key information about DNSKEY records). The default is not to print record comments unless multiline mode is active.
+.RE
+.PP
+\fB+split=W\fR
+.RS 4
+Split long hex\- or base64\-formatted fields in resource records into chunks of
+\fIW\fR
+characters (where
+\fIW\fR
+is rounded up to the nearest multiple of 4).
+\fI+nosplit\fR
+or
+\fI+split=0\fR
+causes fields not to be split at all. The default is 56 characters, or 44 characters when multiline mode is active.
 .RE
 .PP
 \fB+[no]stats\fR
@@ -445,7 +475,7 @@ bytes. The maximum and minimum sizes of this buffer are 65535 and 0 respectively
 .RS 4
 Specify the EDNS version to query with. Valid values are 0 to 255. Setting the EDNS version will cause a EDNS query to be sent.
 \fB+noedns\fR
-clears the remembered EDNS version.
+clears the remembered EDNS version. EDNS is set to 0 by default.
 .RE
 .PP
 \fB+[no]multiline\fR
@@ -453,6 +483,11 @@ clears the remembered EDNS version.
 Print records like the SOA records in a verbose multi\-line format with human\-readable comments. The default is to print each record on a single line, to facilitate machine parsing of the
 \fBdig\fR
 output.
+.RE
+.PP
+\fB+[no]onesoa\fR
+.RS 4
+Print only one (starting) SOA record when performing an AXFR. The default is to print both the starting and ending SOA records.
 .RE
 .PP
 \fB+[no]fail\fR
@@ -480,7 +515,7 @@ Chase DNSSEC signature chains. Requires dig be compiled with \-DDIG_SIGCHASE.
 Specifies a file containing trusted keys to be used with
 \fB+sigchase\fR. Each DNSKEY record must be on its own line.
 .sp
-If not specified
+If not specified,
 \fBdig\fR
 will look for
 \fI/etc/trusted\-key.key\fR
@@ -499,6 +534,12 @@ When chasing DNSSEC signature chains perform a top\-down validation. Requires di
 \fB+[no]nsid\fR
 .RS 4
 Include an EDNS name server ID request when sending a query.
+.RE
+.PP
+\fB+[no]keepopen\fR
+.RS 4
+Keep the TCP socket open between queries and reuse it rather than creating a new TCP socket for each lookup. The default is
+\fB+nokeepopen\fR.
 .RE
 .SH "MULTIPLE QUERIES"
 .PP
@@ -562,7 +603,7 @@ RFC1035.
 .PP
 There are probably too many query options.
 .SH "COPYRIGHT"
-Copyright \(co 2004\-2008 Internet Systems Consortium, Inc. ("ISC")
+Copyright \(co 2004\-2011, 2013 Internet Systems Consortium, Inc. ("ISC")
 .br
 Copyright \(co 2000\-2003 Internet Software Consortium.
 .br

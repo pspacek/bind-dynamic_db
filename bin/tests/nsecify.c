@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007, 2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2007-2009, 2011  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2001, 2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: nsecify.c,v 1.8 2008/09/25 04:02:38 tbox Exp $ */
+/* $Id: nsecify.c,v 1.12 2011/08/29 23:46:44 tbox Exp $ */
 
 #include <config.h>
 
@@ -139,7 +139,7 @@ nsecify(char *filename) {
 	len = strlen(origintext);
 	isc_buffer_init(&b, origintext, len);
 	isc_buffer_add(&b, len);
-	result = dns_name_fromtext(name, &b, dns_rootname, ISC_FALSE, NULL);
+	result = dns_name_fromtext(name, &b, dns_rootname, 0, NULL);
 	check_result(result, "dns_name_fromtext()");
 
 	db = NULL;
@@ -157,6 +157,7 @@ nsecify(char *filename) {
 	result = dns_db_createiterator(db, 0, &dbiter);
 	check_result(result, "dns_db_createiterator()");
 	result = dns_dbiterator_first(dbiter);
+	check_result(result, "dns_dbiterator_first()");
 	node = NULL;
 	result = next_active(db, wversion, dbiter, name, &node);
 	while (result == ISC_R_SUCCESS) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2008-2013  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +14,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: nsec3.h,v 1.5 2008/09/24 03:16:58 tbox Exp $ */
+/* $Id: nsec3.h,v 1.14 2011/10/28 12:20:31 tbox Exp $ */
 
 #ifndef DNS_NSEC3_H
 #define DNS_NSEC3_H 1
@@ -27,6 +27,8 @@
 #include <dns/name.h>
 #include <dns/rdatastruct.h>
 #include <dns/types.h>
+
+#define DNS_NSEC3_SALTSIZE 255
 
 /*
  * hash = 1, flags =1, iterations = 2, salt length = 1, salt = 255 (max)
@@ -41,7 +43,7 @@
 /*
  * Test "unknown" algorithm.  Is mapped to dns_hash_sha1.
  */
-#define DNS_NSEC3_UNKNOWNALG 245U
+#define DNS_NSEC3_UNKNOWNALG ((dns_hash_t)245U)
 
 ISC_LANG_BEGINDECLS
 
@@ -108,6 +110,12 @@ isc_result_t
 dns_nsec3_addnsec3s(dns_db_t *db, dns_dbversion_t *version,
 		    dns_name_t *name, dns_ttl_t nsecttl,
 		    isc_boolean_t unsecure, dns_diff_t *diff);
+
+isc_result_t
+dns_nsec3_addnsec3sx(dns_db_t *db, dns_dbversion_t *version,
+		     dns_name_t *name, dns_ttl_t nsecttl,
+		     isc_boolean_t unsecure, dns_rdatatype_t private,
+		     dns_diff_t *diff);
 /*%<
  * Add NSEC3 records for 'name', recording the change in 'diff'.
  * Adjust previous NSEC3 records, if any, to reflect the addition.
@@ -121,12 +129,16 @@ dns_nsec3_addnsec3s(dns_db_t *db, dns_dbversion_t *version,
  *
  * dns_nsec3_addnsec3s() will examine the NSEC3PARAM RRset to determine which
  * chains to be updated.  NSEC3PARAM records with the DNS_NSEC3FLAG_CREATE
- * will be preferentially choosen over NSEC3PARAM records without
+ * will be preferentially chosen over NSEC3PARAM records without
  * DNS_NSEC3FLAG_CREATE set.  NSEC3PARAM records with DNS_NSEC3FLAG_REMOVE
  * set will be ignored by dns_nsec3_addnsec3s().  If DNS_NSEC3FLAG_CREATE
  * is set then the new NSEC3 will have OPTOUT set to match the that in the
  * NSEC3PARAM record otherwise OPTOUT will be inherited from the previous
  * record in the chain.
+ *
+ * dns_nsec3_addnsec3sx() is similar to dns_nsec3_addnsec3s() but 'private'
+ * specifies the type of the private rdataset to be checked in addition to
+ * the nsec3param rdataset at the zone apex.
  *
  * Requires:
  *	'db' to be valid.
@@ -143,6 +155,10 @@ dns_nsec3_delnsec3(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
 isc_result_t
 dns_nsec3_delnsec3s(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
 		    dns_diff_t *diff);
+
+isc_result_t
+dns_nsec3_delnsec3sx(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
+		     dns_rdatatype_t private, dns_diff_t *diff);
 /*%<
  * Remove NSEC3 records for 'name', recording the change in 'diff'.
  * Adjust previous NSEC3 records, if any, to reflect the removal.
@@ -153,6 +169,10 @@ dns_nsec3_delnsec3s(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
  * dns_nsec3_delnsec3s() examines the NSEC3PARAM RRset in a similar manner
  * to dns_nsec3_addnsec3s().  Unlike dns_nsec3_addnsec3s() updated NSEC3
  * records have the OPTOUT flag preserved.
+ *
+ * dns_nsec3_delnsec3sx() is similar to dns_nsec3_delnsec3s() but 'private'
+ * specifies the type of the private rdataset to be checked in addition to
+ * the nsec3param rdataset at the zone apex.
  *
  * Requires:
  *	'db' to be valid.
@@ -165,9 +185,18 @@ dns_nsec3_delnsec3s(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
 isc_result_t
 dns_nsec3_active(dns_db_t *db, dns_dbversion_t *version,
 		 isc_boolean_t complete, isc_boolean_t *answer);
+
+isc_result_t
+dns_nsec3_activex(dns_db_t *db, dns_dbversion_t *version,
+		  isc_boolean_t complete, dns_rdatatype_t private,
+		  isc_boolean_t *answer);
 /*%<
  * Check if there are any complete/to be built NSEC3 chains.
- * If 'complete' is ISC_TRUE only complete chains will be recognised.
+ * If 'complete' is ISC_TRUE only complete chains will be recognized.
+ *
+ * dns_nsec3_activex() is similar to dns_nsec3_active() but 'private'
+ * specifies the type of the private rdataset to be checked in addition to
+ * the nsec3param rdataset at the zone apex.
  *
  * Requires:
  *	'db' to be valid.
@@ -188,6 +217,45 @@ dns_nsec3_maxiterations(dns_db_t *db, dns_dbversion_t *version,
  *	'mctx' to be valid.
  *	'iterationsp' to be non NULL.
  */
+
+isc_boolean_t
+dns_nsec3param_fromprivate(dns_rdata_t *src, dns_rdata_t *target,
+			   unsigned char *buf, size_t buflen);
+/*%<
+ * Convert a private rdata to a nsec3param rdata.
+ *
+ * Return ISC_TRUE if 'src' could be successfully converted.
+ *
+ * 'buf' should be at least DNS_NSEC3PARAM_BUFFERSIZE in size.
+ */
+
+void
+dns_nsec3param_toprivate(dns_rdata_t *src, dns_rdata_t *target,
+			 dns_rdatatype_t privatetype,
+			 unsigned char *buf, size_t buflen);
+/*%<
+ * Convert a nsec3param rdata to a private rdata.
+ *
+ * 'buf' should be at least src->length + 1 in size.
+ */
+
+isc_result_t
+dns_nsec3param_deletechains(dns_db_t *db, dns_dbversion_t *ver,
+			    dns_zone_t *zone, isc_boolean_t nonsec,
+			    dns_diff_t *diff);
+
+/*%<
+ * Mark NSEC3PARAM for deletion.
+ */
+
+isc_result_t
+dns_nsec3_noexistnodata(dns_rdatatype_t type, dns_name_t* name,
+			dns_name_t *nsec3name, dns_rdataset_t *nsec3set,
+			dns_name_t *zonename, isc_boolean_t *exists,
+			isc_boolean_t *data, isc_boolean_t *optout,
+			isc_boolean_t *unknown, isc_boolean_t *setclosest,
+			isc_boolean_t *setnearest, dns_name_t *closest,
+			dns_name_t *nearest, dns_nseclog_t logit, void *arg);
 
 ISC_LANG_ENDDECLS
 

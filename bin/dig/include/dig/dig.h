@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2009, 2011-2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 2000-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: dig.h,v 1.107 2008/04/03 06:09:04 tbox Exp $ */
+/* $Id: dig.h,v 1.114 2011/12/07 17:23:28 each Exp $ */
 
 #ifndef DIG_H
 #define DIG_H
@@ -168,6 +168,7 @@ isc_boolean_t	sigchase;
 	dns_name_t *oname;
 	ISC_LINK(dig_lookup_t) link;
 	ISC_LIST(dig_query_t) q;
+	ISC_LIST(dig_query_t) connecting;
 	dig_query_t *current_query;
 	dig_serverlist_t my_server_list;
 	dig_searchlist_t *origin;
@@ -201,6 +202,7 @@ struct dig_query {
 	isc_uint32_t second_rr_serial;
 	isc_uint32_t msg_count;
 	isc_uint32_t rr_count;
+	isc_boolean_t ixfr_axfr;
 	char *servname;
 	char *userarg;
 	isc_bufferlist_t sendlist,
@@ -214,6 +216,7 @@ struct dig_query {
 		slspace[4];
 	isc_socket_t *sock;
 	ISC_LINK(dig_query_t) link;
+	ISC_LINK(dig_query_t) clink;
 	isc_sockaddr_t sockaddr;
 	isc_time_t time_sent;
 	isc_uint64_t byte_count;
@@ -273,7 +276,8 @@ extern isc_boolean_t validated;
 extern isc_taskmgr_t *taskmgr;
 extern isc_task_t *global_task;
 extern isc_boolean_t free_now;
-extern isc_boolean_t debugging, memdebugging;
+extern isc_boolean_t debugging, debugtiming, memdebugging;
+extern isc_boolean_t keep_open;
 
 extern char *progname;
 extern int tries;
@@ -285,15 +289,19 @@ extern int idnoptions;
 /*
  * Routines in dighost.c.
  */
-void
+isc_result_t
 get_address(char *host, in_port_t port, isc_sockaddr_t *sockaddr);
+
+int
+getaddresses(dig_lookup_t *lookup, const char *host, isc_result_t *resultp);
 
 isc_result_t
 get_reverse(char *reverse, size_t len, char *value, isc_boolean_t ip6_int,
 	    isc_boolean_t strict);
 
-void
-fatal(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
+ISC_PLATFORM_NORETURN_PRE void
+fatal(const char *format, ...)
+ISC_FORMAT_PRINTF(1, 2) ISC_PLATFORM_NORETURN_POST;
 
 void
 debug(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
@@ -324,6 +332,13 @@ setup_libs(void);
 
 void
 setup_system(void);
+
+isc_result_t
+parse_uint(isc_uint32_t *uip, const char *value, isc_uint32_t max,
+	   const char *desc);
+
+void
+parse_hmac(const char *hmacstr);
 
 dig_lookup_t *
 requeue_lookup(dig_lookup_t *lookold, isc_boolean_t servers);

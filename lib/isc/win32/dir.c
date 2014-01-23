@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007, 2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2007-2009, 2011-2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2001  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: dir.c,v 1.16 2008/11/02 23:47:01 tbox Exp $ */
+/* $Id$ */
 
 /* Principal Authors: DCL */
 
@@ -85,7 +85,7 @@ isc_dir_open(isc_dir_t *dir, const char *dirname) {
 	if (dir->dirname < p && *(p - 1) != '\\' && *(p - 1) != ':')
 		*p++ = '\\';
 	*p++ = '*';
-	*p++ = '\0';
+	*p = '\0';
 
 	/*
 	 * Open stream.
@@ -118,7 +118,7 @@ isc_dir_read(isc_dir_t *dir) {
 				 &dir->entry.find_data) == FALSE)
 			/*
 			 * Either the last file has been processed or
-			 * an error has occured.  The former is not
+			 * an error has occurred.  The former is not
 			 * really an error, but the latter is.
 			 */
 			if (GetLastError() == ERROR_NO_MORE_FILES)
@@ -267,7 +267,8 @@ isc_dir_createunique(char *templet) {
 
 	do {
 		i = mkdir(templet);
-		i = chmod(templet, 0700);
+		if (i == 0)
+			i = chmod(templet, 0700);
 
 		if (i == 0 || errno != EEXIST)
 			break;

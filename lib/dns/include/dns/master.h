@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2009, 2011-2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: master.h,v 1.51 2008/04/02 02:37:42 marka Exp $ */
+/* $Id$ */
 
 #ifndef DNS_MASTER_H
 #define DNS_MASTER_H 1
@@ -56,6 +56,8 @@
 #define DNS_MASTER_CHECKMXFAIL	0x00001000
 
 #define DNS_MASTER_RESIGN	0x00002000
+#define DNS_MASTER_KEY	 	0x00004000	/*%< Loading a key zone master file. */
+#define DNS_MASTER_NOTTL	0x00008000	/*%< Don't require ttl. */
 
 ISC_LANG_BEGINDECLS
 
@@ -65,18 +67,29 @@ ISC_LANG_BEGINDECLS
  * encoding, we directly read/write each field so that the encoded data
  * is always "packed", regardless of the hardware architecture.
  */
-#define DNS_RAWFORMAT_VERSION 0
+#define DNS_RAWFORMAT_VERSION 1
+
+/*
+ * Flags to indicate the status of the data in the raw file header
+ */
+#define DNS_MASTERRAW_COMPAT 		0x01
+#define DNS_MASTERRAW_SOURCESERIALSET	0x02
+#define DNS_MASTERRAW_LASTXFRINSET	0x04
 
 /* Common header */
-typedef struct {
+struct dns_masterrawheader {
 	isc_uint32_t		format;		/* must be
 						 * dns_masterformat_raw */
 	isc_uint32_t		version;	/* compatibility for future
 						 * extensions */
 	isc_uint32_t		dumptime;	/* timestamp on creation
-						 * (currently unused)
-						 */
-} dns_masterrawheader_t;
+						 * (currently unused) */
+	isc_uint32_t		flags;		/* Flags */
+	isc_uint32_t		sourceserial;	/* Source serial number (used
+						 * by inline-signing zones) */
+	isc_uint32_t		lastxfrin;	/* timestamp of last transfer
+						 * (used by slave zones) */
+};
 
 /* The structure for each RRset */
 typedef struct {
@@ -301,6 +314,12 @@ dns_loadctx_cancel(dns_loadctx_t *ctx);
  *\li	'ctx' to be valid
  */
 
+void
+dns_master_initrawheader(dns_masterrawheader_t *header);
+/*%<
+ * Initializes the header for a raw master file, setting all
+ * values to zero.
+ */
 ISC_LANG_ENDDECLS
 
 #endif /* DNS_MASTER_H */

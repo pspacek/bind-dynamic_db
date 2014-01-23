@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2010, 2013, 2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: platform.h.in,v 1.48 2008/06/23 19:41:19 jinmei Exp $ */
+/* $Id: platform.h.in,v 1.56 2010/12/18 01:56:23 each Exp $ */
 
 #ifndef ISC_PLATFORM_H
 #define ISC_PLATFORM_H 1
@@ -94,11 +94,6 @@
 @ISC_PLATFORM_NEEDPTON@
 
 /*! \brief
- * If this system needs inet_aton(), ISC_PLATFORM_NEEDATON will be defined.
- */
-@ISC_PLATFORM_NEEDATON@
-
-/*! \brief
  * If this system needs in_port_t, ISC_PLATFORM_NEEDPORTT will be defined.
  */
 @ISC_PLATFORM_NEEDPORTT@
@@ -151,6 +146,11 @@
  */
 @ISC_PLATFORM_HAVEDEVPOLL@
 
+/*! \brief
+ * Define if we want to log backtrace
+ */
+@ISC_PLATFORM_USEBACKTRACE@
+
 /*
  *** Printing.
  ***/
@@ -199,6 +199,11 @@
  */
 @ISC_PLATFORM_NEEDMEMMOVE@
 
+/*
+ * Define if this system needs strcasestr.
+ */
+@ISC_PLATFORM_NEEDSTRCASESTR@
+
 /***
  *** Miscellaneous.
  ***/
@@ -218,6 +223,18 @@
  * the GSSAPI header.
  */
 @ISC_PLATFORM_GSSAPIHEADER@
+
+/*
+ * Defined to <gssapi_krb5.h> or <gssapi/gssapi_krb5.h> for how to
+ * include the GSSAPI KRB5 header.
+ */
+@ISC_PLATFORM_GSSAPI_KRB5_HEADER@
+
+/*
+ * Defined to <krb5.h> or <krb5/krb5.h> for how to include
+ * the KRB5 header.
+ */
+@ISC_PLATFORM_KRB5HEADER@
 
 /*
  * Type used for resource limits.
@@ -289,6 +306,17 @@
  */
 @ISC_PLATFORM_HAVESTRINGSH@
 
+/*
+ * Define if the hash functions must be provided by OpenSSL.
+ */
+@ISC_PLATFORM_OPENSSLHASH@
+
+/*
+ * Defines for the noreturn attribute.
+ */
+@ISC_PLATFORM_NORETURN_PRE@
+@ISC_PLATFORM_NORETURN_POST@
+
 /***
  ***	Windows dll support.
  ***/
@@ -305,6 +333,7 @@
 #define LIBISCCC_EXTERNAL_DATA
 #define LIBISCCFG_EXTERNAL_DATA
 #define LIBBIND9_EXTERNAL_DATA
+#define LIBTESTS_EXTERNAL_DATA
 #else /*! \brief ISC_PLATFORM_USEDECLSPEC */
 #ifdef LIBISC_EXPORTS
 #define LIBISC_EXTERNAL_DATA __declspec(dllexport)
@@ -330,6 +359,11 @@
 #define LIBBIND9_EXTERNAL_DATA __declspec(dllexport)
 #else
 #define LIBBIND9_EXTERNAL_DATA __declspec(dllimport)
+#endif
+#ifdef LIBTESTS_EXPORTS
+#define LIBTESTS_EXTERNAL_DATA __declspec(dllexport)
+#else
+#define LIBTESTS_EXTERNAL_DATA __declspec(dllimport)
 #endif
 #endif /*! \brief ISC_PLATFORM_USEDECLSPEC */
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2005, 2007, 2011-2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2001  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: ttl.c,v 1.29 2007/06/19 23:47:16 tbox Exp $ */
+/* $Id$ */
 
 /*! \file */
 
@@ -53,7 +53,7 @@ ttlfmt(unsigned int t, const char *s, isc_boolean_t verbose,
        isc_boolean_t space, isc_buffer_t *target)
 {
 	char tmp[60];
-	size_t len;
+	unsigned int len;
 	isc_region_t region;
 
 	if (verbose)
@@ -68,7 +68,7 @@ ttlfmt(unsigned int t, const char *s, isc_boolean_t verbose,
 	isc_buffer_availableregion(target, &region);
 	if (len > region.length)
 		return (ISC_R_NOSPACE);
-	memcpy(region.base, tmp, len);
+	memmove(region.base, tmp, len);
 	isc_buffer_add(target, len);
 
 	return (ISC_R_SUCCESS);
@@ -86,6 +86,7 @@ dns_ttl_totext(isc_uint32_t src, isc_boolean_t verbose, isc_buffer_t *target) {
 	hours = src % 24;  src /= 24;
 	days = src % 7;    src /= 7;
 	weeks = src;       src = 0;
+	POST(src);
 
 	x = 0;
 	if (weeks != 0) {

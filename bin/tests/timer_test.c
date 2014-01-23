@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2007, 2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1998-2001  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -102,9 +102,13 @@ main(int argc, char *argv[]) {
 	isc_time_t expires, now;
 	isc_interval_t interval;
 
-	if (argc > 1)
+	if (argc > 1) {
 		workers = atoi(argv[1]);
-	else
+		if (workers < 1)
+			workers = 1;
+		if (workers > 8192)
+			workers = 8192;
+	} else
 		workers = 2;
 	printf("%d workers\n", workers);
 
@@ -154,12 +158,20 @@ main(int argc, char *argv[]) {
 	isc_task_detach(&t2);
 	isc_task_detach(&t3);
 
+#ifndef WIN32
 	sleep(15);
+#else
+	Sleep(15000);
+#endif
 	printf("destroy\n");
 	isc_timer_detach(&ti1);
 	isc_timer_detach(&ti2);
 	isc_timer_detach(&ti3);
+#ifndef WIN32
 	sleep(2);
+#else
+	Sleep(2000);
+#endif
 	isc_timermgr_destroy(&timgr);
 	isc_taskmgr_destroy(&manager);
 	printf("destroyed\n");

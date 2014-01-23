@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 2001-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: config.c,v 1.93 2008/11/06 05:30:24 marka Exp $ */
+/* $Id: config.c,v 1.123 2012/01/06 23:46:41 tbox Exp $ */
 
 /*! \file */
 
@@ -42,8 +42,12 @@
 #include <dns/tsig.h>
 #include <dns/zone.h>
 
+#include <dst/dst.h>
+
 #include <named/config.h>
 #include <named/globals.h>
+
+#include "bind.keys.h"
 
 /*% default configuration */
 static char defaultconf[] = "\
@@ -55,7 +59,10 @@ options {\n\
 	files unlimited;\n\
 	stacksize default;\n"
 #endif
-"	deallocate-on-exit true;\n\
+"#	session-keyfile \"" NS_LOCALSTATEDIR "/run/named/session.key\";\n\
+	session-keyname local-ddns;\n\
+	session-keyalg hmac-sha256;\n\
+	deallocate-on-exit true;\n\
 #	directory <none>\n\
 	dump-file \"named_dump.db\";\n\
 	fake-iquery no;\n\
@@ -66,12 +73,15 @@ options {\n\
 	listen-on {any;};\n\
 	listen-on-v6 {none;};\n\
 	match-mapped-addresses no;\n\
+	max-rsa-exponent-size 0; /* no limit */\n\
 	memstatistics-file \"named.memstats\";\n\
 	multiple-cnames no;\n\
 #	named-xfer <obsolete>;\n\
 #	pid-file \"" NS_LOCALSTATEDIR "/run/named/named.pid\"; /* or /lwresd.pid */\n\
+	bindkeys-file \"" NS_SYSCONFDIR "/bind.keys\";\n\
 	port 53;\n\
 	recursing-file \"named.recursing\";\n\
+	secroots-file \"named.secroots\";\n\
 "
 #ifdef PATH_RANDOMDEV
 "\
@@ -80,14 +90,15 @@ options {\n\
 #endif
 "\
 	recursive-clients 1000;\n\
-	rrset-order {type NS order random; order cyclic; };\n\
+	resolver-query-timeout 10;\n\
+	rrset-order { order random; };\n\
 	serial-queries 20;\n\
 	serial-query-rate 20;\n\
 	server-id none;\n\
 	statistics-file \"named.stats\";\n\
 	statistics-interval 60;\n\
 	tcp-clients 100;\n\
-	tcp-listen-queue 3;\n\
+	tcp-listen-queue 10;\n\
 #	tkey-dhkey <none>\n\
 #	tkey-gssapi-credential <none>\n\
 #	tkey-domain <none>\n\
@@ -101,6 +112,9 @@ options {\n\
 	max-udp-size 4096;\n\
 	request-nsid false;\n\
 	reserved-sockets 512;\n\
+\n\
+	/* DLV */\n\
+	dnssec-lookaside . trust-anchor dlv.isc.org;\n\
 \n\
 	/* view */\n\
 	allow-notify {none;};\n\
@@ -135,7 +149,9 @@ options {\n\
 	check-names master fail;\n\
 	check-names slave warn;\n\
 	check-names response ignore;\n\
+	check-dup-records warn;\n\
 	check-mx warn;\n\
+	check-spf warn;\n\
 	acache-enable no;\n\
 	acache-cleaning-interval 60;\n\
 	max-acache-size 16M;\n\
@@ -146,7 +162,13 @@ options {\n\
 	max-clients-per-query 100;\n\
 	zero-no-soa-ttl-cache no;\n\
 	nsec3-test-zone no;\n\
+	allow-new-zones no;\n\
 "
+#ifdef ALLOW_FILTER_AAAA_ON_V4
+"	filter-aaaa-on-v4 no;\n\
+	filter-aaaa { any; };\n\
+"
+#endif
 
 "	/* zone */\n\
 	allow-query {any;};\n\
@@ -174,11 +196,13 @@ options {\n\
 	max-refresh-time 2419200; /* 4 weeks */\n\
 	min-refresh-time 300;\n\
 	multi-master no;\n\
+	dnssec-secure-to-insecure no;\n\
 	sig-validity-interval 30; /* days */\n\
 	sig-signing-nodes 100;\n\
 	sig-signing-signatures 10;\n\
-	sig-signing-type 65535;\n\
-	zone-statistics false;\n\
+	sig-signing-type 65534;\n\
+	inline-signing no;\n\
+	zone-statistics terse;\n\
 	max-journal-size unlimited;\n\
 	ixfr-from-differences false;\n\
 	check-wildcard yes;\n\
@@ -188,6 +212,10 @@ options {\n\
 	check-srv-cname warn;\n\
 	zero-no-soa-ttl yes;\n\
 	update-check-ksk yes;\n\
+	serial-update-method increment;\n\
+	dnssec-update-mode maintain;\n\
+	dnssec-dnskey-kskonly no;\n\
+	dnssec-loadkeys-interval 60;\n\
 	try-tcp-refresh yes; /* BIND 8 compat */\n\
 };\n\
 "
@@ -198,8 +226,18 @@ options {\n\
 view \"_bind\" chaos {\n\
 	recursion no;\n\
 	notify no;\n\
-\n\
-	zone \"version.bind\" chaos {\n\
+	allow-new-zones no;\n\
+"
+#ifdef USE_RRL
+"	# Prevent use of this zone in DNS amplified reflection DoS attacks\n\
+	rate-limit {\n\
+		responses-per-second 3;\n\
+		slip 0;\n\
+		min-table-size 10;\n\
+	};\n\
+"
+#endif /* USE_RRL */
+"	zone \"version.bind\" chaos {\n\
 		type master;\n\
 		database \"_builtin version\";\n\
 	};\n\
@@ -213,11 +251,24 @@ view \"_bind\" chaos {\n\
 		type master;\n\
 		database \"_builtin authors\";\n\
 	};\n\
+\n\
 	zone \"id.server\" chaos {\n\
 		type master;\n\
 		database \"_builtin id\";\n\
 	};\n\
 };\n\
+"
+"#\n\
+#  Default trusted key(s) for builtin DLV support\n\
+#  (used if \"dnssec-lookaside auto;\" is set and\n\
+#  sysconfdir/bind.keys doesn't exist).\n\
+#\n\
+# BEGIN MANAGED KEYS\n"
+
+/* Imported from bind.keys.h: */
+MANAGED_KEYS
+
+"# END MANAGED KEYS\n\
 ";
 
 isc_result_t
@@ -255,7 +306,8 @@ ns_checknames_get(const cfg_obj_t **maps, const char *which,
 		if (maps[i] == NULL)
 			return (ISC_R_NOTFOUND);
 		checknames = NULL;
-		if (cfg_map_get(maps[i], "check-names", &checknames) == ISC_R_SUCCESS) {
+		if (cfg_map_get(maps[i], "check-names",
+				&checknames) == ISC_R_SUCCESS) {
 			/*
 			 * Zone map entry is not a list.
 			 */
@@ -268,7 +320,8 @@ ns_checknames_get(const cfg_obj_t **maps, const char *which,
 			     element = cfg_list_next(element)) {
 				value = cfg_listelt_value(element);
 				type = cfg_tuple_get(value, "type");
-				if (strcasecmp(cfg_obj_asstring(type), which) == 0) {
+				if (strcasecmp(cfg_obj_asstring(type),
+					       which) == 0) {
 					*obj = cfg_tuple_get(value, "mode");
 					return (ISC_R_SUCCESS);
 				}
@@ -339,6 +392,10 @@ ns_config_getzonetype(const cfg_obj_t *zonetypeobj) {
 		ztype = dns_zone_slave;
 	else if (strcasecmp(str, "stub") == 0)
 		ztype = dns_zone_stub;
+	else if (strcasecmp(str, "static-stub") == 0)
+		ztype = dns_zone_staticstub;
+	else if (strcasecmp(str, "redirect") == 0)
+		ztype = dns_zone_redirect;
 	else
 		INSIST(0);
 	return (ztype);
@@ -516,7 +573,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 				if (new == NULL)
 					goto cleanup;
 				if (listcount != 0) {
-					memcpy(new, lists, oldsize);
+					memmove(new, lists, oldsize);
 					isc_mem_put(mctx, lists, oldsize);
 				}
 				lists = new;
@@ -551,7 +608,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 				if (new == NULL)
 					goto cleanup;
 				if (stackcount != 0) {
-					memcpy(new, stack, oldsize);
+					memmove(new, stack, oldsize);
 					isc_mem_put(mctx, stack, oldsize);
 				}
 				stack = new;
@@ -578,7 +635,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 			if (new == NULL)
 				goto cleanup;
 			if (addrcount != 0) {
-				memcpy(new, addrs, oldsize);
+				memmove(new, addrs, oldsize);
 				isc_mem_put(mctx, addrs, oldsize);
 			}
 			addrs = new;
@@ -590,7 +647,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 			if (new == NULL)
 				goto cleanup;
 			if (keycount != 0) {
-				memcpy(new, keys, oldsize);
+				memmove(new, keys, oldsize);
 				isc_mem_put(mctx, keys, oldsize);
 			}
 			keys = new;
@@ -601,28 +658,26 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 		if (isc_sockaddr_getport(&addrs[i]) == 0)
 			isc_sockaddr_setport(&addrs[i], port);
 		keys[i] = NULL;
-		if (!cfg_obj_isstring(key)) {
-			i++;
+		i++;	/* Increment here so that cleanup on error works. */
+		if (!cfg_obj_isstring(key))
 			continue;
-		}
-		keys[i] = isc_mem_get(mctx, sizeof(dns_name_t));
-		if (keys[i] == NULL)
+		keys[i - 1] = isc_mem_get(mctx, sizeof(dns_name_t));
+		if (keys[i - 1] == NULL)
 			goto cleanup;
-		dns_name_init(keys[i], NULL);
+		dns_name_init(keys[i - 1], NULL);
 
 		keystr = cfg_obj_asstring(key);
-		isc_buffer_init(&b, keystr, strlen(keystr));
+		isc_buffer_constinit(&b, keystr, strlen(keystr));
 		isc_buffer_add(&b, strlen(keystr));
 		dns_fixedname_init(&fname);
 		result = dns_name_fromtext(dns_fixedname_name(&fname), &b,
-					   dns_rootname, ISC_FALSE, NULL);
+					   dns_rootname, 0, NULL);
 		if (result != ISC_R_SUCCESS)
 			goto cleanup;
 		result = dns_name_dup(dns_fixedname_name(&fname), mctx,
-				      keys[i]);
+				      keys[i - 1]);
 		if (result != ISC_R_SUCCESS)
 			goto cleanup;
-		i++;
 	}
 	if (pushed != 0) {
 		pushed--;
@@ -640,7 +695,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 			new = isc_mem_get(mctx, newsize);
 			if (new == NULL)
 				goto cleanup;
-			memcpy(new, addrs, newsize);
+			memmove(new, addrs, newsize);
 		} else
 			new = NULL;
 		isc_mem_put(mctx, addrs, oldsize);
@@ -653,7 +708,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 			new = isc_mem_get(mctx, newsize);
 			if (new == NULL)
 				goto cleanup;
-			memcpy(new, keys,  newsize);
+			memmove(new, keys,  newsize);
 		} else
 			new = NULL;
 		isc_mem_put(mctx, keys, oldsize);
@@ -678,7 +733,7 @@ ns_config_getipandkeylist(const cfg_obj_t *config, const cfg_obj_t *list,
 	if (addrs != NULL)
 		isc_mem_put(mctx, addrs, addrcount * sizeof(isc_sockaddr_t));
 	if (keys != NULL) {
-		for (j = 0; j <= i; j++) {
+		for (j = 0; j < i; j++) {
 			if (keys[j] == NULL)
 				continue;
 			if (dns_name_dynamic(keys[j]))
@@ -747,22 +802,30 @@ struct keyalgorithms {
 	const char *str;
 	enum { hmacnone, hmacmd5, hmacsha1, hmacsha224,
 	       hmacsha256, hmacsha384, hmacsha512 } hmac;
+	unsigned int type;
 	isc_uint16_t size;
 } algorithms[] = {
-	{ "hmac-md5", hmacmd5, 128 },
-	{ "hmac-md5.sig-alg.reg.int", hmacmd5, 0 },
-	{ "hmac-md5.sig-alg.reg.int.", hmacmd5, 0 },
-	{ "hmac-sha1", hmacsha1, 160 },
-	{ "hmac-sha224", hmacsha224, 224 },
-	{ "hmac-sha256", hmacsha256, 256 },
-	{ "hmac-sha384", hmacsha384, 384 },
-	{ "hmac-sha512", hmacsha512, 512 },
-	{  NULL, hmacnone, 0 }
+	{ "hmac-md5", hmacmd5, DST_ALG_HMACMD5, 128 },
+	{ "hmac-md5.sig-alg.reg.int", hmacmd5, DST_ALG_HMACMD5, 0 },
+	{ "hmac-md5.sig-alg.reg.int.", hmacmd5, DST_ALG_HMACMD5, 0 },
+	{ "hmac-sha1", hmacsha1, DST_ALG_HMACSHA1, 160 },
+	{ "hmac-sha224", hmacsha224, DST_ALG_HMACSHA224, 224 },
+	{ "hmac-sha256", hmacsha256, DST_ALG_HMACSHA256, 256 },
+	{ "hmac-sha384", hmacsha384, DST_ALG_HMACSHA384, 384 },
+	{ "hmac-sha512", hmacsha512, DST_ALG_HMACSHA512, 512 },
+	{  NULL, hmacnone, DST_ALG_UNKNOWN, 0 }
 };
 
 isc_result_t
 ns_config_getkeyalgorithm(const char *str, dns_name_t **name,
 			  isc_uint16_t *digestbits)
+{
+	return (ns_config_getkeyalgorithm2(str, name, NULL, digestbits));
+}
+
+isc_result_t
+ns_config_getkeyalgorithm2(const char *str, dns_name_t **name,
+			   unsigned int *typep, isc_uint16_t *digestbits)
 {
 	int i;
 	size_t len = 0;
@@ -801,6 +864,8 @@ ns_config_getkeyalgorithm(const char *str, dns_name_t **name,
 			INSIST(0);
 		}
 	}
+	if (typep != NULL)
+		*typep = algorithms[i].type;
 	if (digestbits != NULL)
 		*digestbits = bits;
 	return (ISC_R_SUCCESS);

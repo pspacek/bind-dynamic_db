@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2008, 2011, 2012, 2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 2000-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: lwconfig.c,v 1.46 2007/06/19 23:47:22 tbox Exp $ */
+/* $Id$ */
 
 /*! \file */
 
@@ -24,32 +24,32 @@
  *
  *    lwres_conf_init() creates an empty lwres_conf_t structure for
  *    lightweight resolver context ctx.
- * 
+ *
  *    lwres_conf_clear() frees up all the internal memory used by that
  *    lwres_conf_t structure in resolver context ctx.
- * 
+ *
  *    lwres_conf_parse() opens the file filename and parses it to initialise
  *    the resolver context ctx's lwres_conf_t structure.
- * 
+ *
  *    lwres_conf_print() prints the lwres_conf_t structure for resolver
  *    context ctx to the FILE fp.
- * 
+ *
  * \section lwconfig_return Return Values
- * 
+ *
  *    lwres_conf_parse() returns #LWRES_R_SUCCESS if it successfully read and
  *    parsed filename. It returns #LWRES_R_FAILURE if filename could not be
  *    opened or contained incorrect resolver statements.
- * 
+ *
  *    lwres_conf_print() returns #LWRES_R_SUCCESS unless an error occurred
  *    when converting the network addresses to a numeric host address
  *    string. If this happens, the function returns #LWRES_R_FAILURE.
- * 
+ *
  * \section lwconfig_see See Also
- * 
+ *
  *    stdio(3), \link resolver resolver \endlink
- * 
+ *
  * \section files Files
- * 
+ *
  *    /etc/resolv.conf
  */
 
@@ -313,8 +313,11 @@ lwres_conf_parsenameserver(lwres_context_t *ctx,  FILE *fp) {
 		return (LWRES_R_FAILURE); /* Extra junk on line. */
 
 	res = lwres_create_addr(word, &address, 1);
-	if (res == LWRES_R_SUCCESS)
+	if (res == LWRES_R_SUCCESS &&
+	    ((address.family == LWRES_ADDRTYPE_V4 && ctx->use_ipv4 == 1) ||
+	     (address.family == LWRES_ADDRTYPE_V6 && ctx->use_ipv6 == 1))) {
 		confdata->nameservers[confdata->nsnext++] = address;
+	}
 
 	return (LWRES_R_SUCCESS);
 }
@@ -452,16 +455,16 @@ lwres_create_addr(const char *buffer, lwres_addr_t *addr, int convert_zero) {
 			unsigned char zeroaddress[] = {0, 0, 0, 0};
 			unsigned char loopaddress[] = {127, 0, 0, 1};
 			if (memcmp(&v4, zeroaddress, 4) == 0)
-				memcpy(&v4, loopaddress, 4);
+				memmove(&v4, loopaddress, 4);
 		}
 		addr->family = LWRES_ADDRTYPE_V4;
 		addr->length = NS_INADDRSZ;
-		memcpy((void *)addr->address, &v4, NS_INADDRSZ);
+		memmove((void *)addr->address, &v4, NS_INADDRSZ);
 
 	} else if (lwres_net_pton(AF_INET6, buffer, &v6) == 1) {
 		addr->family = LWRES_ADDRTYPE_V6;
 		addr->length = NS_IN6ADDRSZ;
-		memcpy((void *)addr->address, &v6, NS_IN6ADDRSZ);
+		memmove((void *)addr->address, &v6, NS_IN6ADDRSZ);
 	} else {
 		return (LWRES_R_FAILURE); /* Unrecognised format. */
 	}
@@ -586,6 +589,7 @@ lwres_conf_parse(lwres_context_t *ctx, const char *filename) {
 		stopchar = getword(fp, word, sizeof(word));
 		if (stopchar == EOF) {
 			rval = LWRES_R_SUCCESS;
+			POST(rval);
 			break;
 		}
 

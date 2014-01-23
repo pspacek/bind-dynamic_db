@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2012  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: rdataset.c,v 1.82 2008/09/24 02:46:22 marka Exp $ */
+/* $Id$ */
 
 /*! \file */
 
@@ -26,6 +26,7 @@
 #include <isc/buffer.h>
 #include <isc/mem.h>
 #include <isc/random.h>
+#include <isc/serial.h>
 #include <isc/util.h>
 
 #include <dns/name.h>
@@ -33,6 +34,26 @@
 #include <dns/rdata.h>
 #include <dns/rdataset.h>
 #include <dns/compress.h>
+
+static const char *trustnames[] = {
+	"none",
+	"pending-additional",
+	"pending-answer",
+	"additional",
+	"glue",
+	"answer",
+	"authauthority",
+	"authanswer",
+	"secure",
+	"local" /* aka ultimate */
+};
+
+const char *
+dns_trust_totext(dns_trust_t trust) {
+	if (trust >= sizeof(trustnames)/sizeof(*trustnames))
+		return ("bad");
+	return (trustnames[trust]);
+}
 
 void
 dns_rdataset_init(dns_rdataset_t *rdataset) {
@@ -182,6 +203,8 @@ static dns_rdatasetmethods_t question_methods = {
 	NULL,
 	NULL,
 	NULL,
+	NULL,
+	NULL,
 	NULL
 };
 
@@ -297,7 +320,7 @@ towiresorted(dns_rdataset_t *rdataset, const dns_name_t *owner_name,
 	dns_rdata_t rdata = DNS_RDATA_INIT;
 	isc_region_t r;
 	isc_result_t result;
-	unsigned int i, count, added, choice;
+	unsigned int i, count = 0, added, choice;
 	isc_buffer_t savedbuffer, rdlen, rrbuffer;
 	unsigned int headlen;
 	isc_boolean_t question = ISC_FALSE;
@@ -317,13 +340,12 @@ towiresorted(dns_rdataset_t *rdataset, const dns_name_t *owner_name,
 	REQUIRE((order == NULL) == (order_arg == NULL));
 	REQUIRE(cctx != NULL && cctx->mctx != NULL);
 
-	count = 0;
 	if ((rdataset->attributes & DNS_RDATASETATTR_QUESTION) != 0) {
 		question = ISC_TRUE;
 		count = 1;
 		result = dns_rdataset_first(rdataset);
 		INSIST(result == ISC_R_NOMORE);
-	} else if (rdataset->type == 0) {
+	} else if ((rdataset->attributes & DNS_RDATASETATTR_NEGATIVE) != 0) {
 		/*
 		 * This is a negative caching rdataset.
 		 */
@@ -342,7 +364,7 @@ towiresorted(dns_rdataset_t *rdataset, const dns_name_t *owner_name,
 	}
 
 	/*
-	 * Do we want to shuffle this anwer?
+	 * Do we want to shuffle this answer?
 	 */
 	if (!question && count > 1 &&
 	    (!WANT_FIXED(rdataset) || order != NULL) &&
@@ -421,11 +443,11 @@ towiresorted(dns_rdataset_t *rdataset, const dns_name_t *owner_name,
 			j = val % count;
 			for (i = 0; i < count; i++) {
 				if (order != NULL)
-					sorted[j].key = (*order)(&shuffled[i],
+					sorted[i].key = (*order)(&shuffled[j],
 								 order_arg);
 				else
-					sorted[j].key = 0; /* Unused */
-				sorted[j].rdata = &shuffled[i];
+					sorted[i].key = 0; /* Unused */
+				sorted[i].rdata = &shuffled[j];
 				j++;
 				if (j == count)
 					j = 0; /* Wrap around. */
@@ -732,3 +754,49 @@ dns_rdataset_putadditional(dns_acache_t *acache,
 	return (ISC_R_FAILURE);
 }
 
+void
+dns_rdataset_settrust(dns_rdataset_t *rdataset, dns_trust_t trust) {
+	REQUIRE(DNS_RDATASET_VALID(rdataset));
+	REQUIRE(rdataset->methods != NULL);
+
+	if (rdataset->methods->settrust != NULL)
+		(rdataset->methods->settrust)(rdataset, trust);
+	else
+		rdataset->trust = trust;
+}
+
+void
+dns_rdataset_expire(dns_rdataset_t *rdataset) {
+	REQUIRE(DNS_RDATASET_VALID(rdataset));
+	REQUIRE(rdataset->methods != NULL);
+
+	if (rdataset->methods->expire != NULL)
+		(rdataset->methods->expire)(rdataset);
+}
+
+void
+dns_rdataset_trimttl(dns_rdataset_t *rdataset, dns_rdataset_t *sigrdataset,
+		     dns_rdata_rrsig_t *rrsig, isc_stdtime_t now,
+		     isc_boolean_t acceptexpired)
+{
+	isc_uint32_t ttl = 0;
+
+	REQUIRE(DNS_RDATASET_VALID(rdataset));
+	REQUIRE(DNS_RDATASET_VALID(sigrdataset));
+	REQUIRE(rrsig != NULL);
+
+	/*
+	 * If we accept expired RRsets keep them for no more than 120 seconds.
+	 */
+	if (acceptexpired &&
+	    (isc_serial_le(rrsig->timeexpire, ((now + 120) & 0xffffffff)) ||
+	     isc_serial_le(rrsig->timeexpire, now)))
+		ttl = 120;
+	else if (isc_serial_ge(rrsig->timeexpire, now))
+		ttl = rrsig->timeexpire - now;
+
+	ttl = ISC_MIN(ISC_MIN(rdataset->ttl, sigrdataset->ttl),
+		      ISC_MIN(rrsig->originalttl, ttl));
+	rdataset->ttl = ttl;
+	sigrdataset->ttl = ttl;
+}

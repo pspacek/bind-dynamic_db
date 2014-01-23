@@ -50,8 +50,6 @@
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifdef DLZ
-
 #include <config.h>
 
 #include <dns/log.h>
@@ -166,12 +164,12 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 		ISC_LIST_APPEND(*tql, tseg, link);
 
 		/*
-		 * split string at the first "%". set query segment to
+		 * split string at the first "$". set query segment to
 		 * left portion
 		 */
 		tseg->sql = isc_mem_strdup(mctx,
 					   isc_string_separate(&right_str,
-							       "%"));
+							       "$"));
 		if (tseg->sql == NULL) {
 			/* no memory, clean everything up. */
 			result = ISC_R_NOMEMORY;
@@ -181,7 +179,7 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 		tseg->direct = isc_boolean_true;
 		tseg->strlen = strlen(tseg->sql);
 
-		/* check if we encountered "%zone%" token */
+		/* check if we encountered "$zone$" token */
 		if (strcasecmp(tseg->sql, "zone") == 0) {
 			/*
 			 * we don't really need, or want the "zone"
@@ -194,7 +192,7 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 			/* tseg->sql points in-directly to a string */
 			tseg->direct = isc_boolean_false;
 			foundzone = isc_boolean_true;
-			/* check if we encountered "%record%" token */
+			/* check if we encountered "$record$" token */
 		} else if (strcasecmp(tseg->sql, "record") == 0) {
 			/*
 			 * we don't really need, or want the "record"
@@ -207,7 +205,7 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 			/* tseg->sql points in-directly poinsts to a string */
 			tseg->direct = isc_boolean_false;
 			foundrecord = isc_boolean_true;
-			/* check if we encountered "%client%" token */
+			/* check if we encountered "$client$" token */
 		} else if (strcasecmp(tseg->sql, "client") == 0) {
 			/*
 			 * we don't really need, or want the "client"
@@ -235,7 +233,7 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 		/* Write error message to log */
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
 			      DNS_LOGMODULE_DLZ, ISC_LOG_ERROR,
-			      "Required token %%client%% not found.");
+			      "Required token $client$ not found.");
 		result = ISC_R_FAILURE;
 		goto flag_fail;
 	}
@@ -245,7 +243,7 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 		/* Write error message to log */
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
 			      DNS_LOGMODULE_DLZ, ISC_LOG_ERROR,
-			      "Required token %%record%% not found.");
+			      "Required token $record$ not found.");
 		result = ISC_R_FAILURE;
 		goto flag_fail;
 	}
@@ -255,7 +253,7 @@ build_querylist(isc_mem_t *mctx, const char *query_str, char **zone,
 		/* Write error message to log */
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
 			      DNS_LOGMODULE_DLZ, ISC_LOG_ERROR,
-			      "Required token %%zone%% not found.");
+			      "Required token $zone$ not found.");
 		result = ISC_R_FAILURE;
 		goto flag_fail;
 	}
@@ -314,22 +312,18 @@ sdlzh_build_querystring(isc_mem_t *mctx, query_list_t *querylist)
 	if (qs == NULL)
 		return NULL;
 
+	*qs = 0;
 	/* start at the top of the list again */
 	tseg = ISC_LIST_HEAD(*querylist);
-	/* copy the first item in the list to the query string */
-	if (tseg->direct == isc_boolean_true)	/* query segment */
-		strcpy(qs, tseg->sql);
-	else
-		strcpy(qs, * (char**) tseg->sql); /* dynamic segment */
-
-	/* concatonate the rest of the segments */
-	while ((tseg = ISC_LIST_NEXT(tseg, link)) != NULL) {
+	while (tseg != NULL) {
 		if (tseg->direct == isc_boolean_true)
 			/* query segments */
 			strcat(qs, tseg->sql);
 		else
 			/* dynamic segments */
 			strcat(qs, * (char**) tseg->sql);
+		/* get the next segment */
+		tseg = ISC_LIST_NEXT(tseg, link);
 	}
 
 	return qs;
@@ -487,7 +481,7 @@ sdlzh_destroy_sqldbinstance(dbinstance_t *dbi)
 	destroy_querylist(mctx, &dbi->lookup_q);
 
 	/* get rid of the mutex */
-	isc_mutex_destroy(&dbi->instance_lock);
+	(void) isc_mutex_destroy(&dbi->instance_lock);
 
 	/* return, and detach the memory */
 	isc_mem_put(mctx, dbi, sizeof(dbinstance_t));
@@ -527,5 +521,3 @@ sdlzh_get_parameter_value(isc_mem_t *mctx, const char *input, const char* key)
 
 	return isc_mem_strdup(mctx, value);
 }
-
-#endif

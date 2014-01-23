@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2009, 2011, 2013, 2014  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: acl.c,v 1.50 2008/09/26 23:47:06 tbox Exp $ */
+/* $Id: acl.c,v 1.55 2011/06/17 23:47:49 tbox Exp $ */
 
 /*! \file */
 
@@ -48,7 +48,10 @@ dns_acl_create(isc_mem_t *mctx, int n, dns_acl_t **target) {
 	acl = isc_mem_get(mctx, sizeof(*acl));
 	if (acl == NULL)
 		return (ISC_R_NOMEMORY);
-	acl->mctx = mctx;
+
+	acl->mctx = NULL;
+	isc_mem_attach(mctx, &acl->mctx);
+
 	acl->name = NULL;
 
 	result = isc_refcount_init(&acl->refcount, 1);
@@ -99,6 +102,7 @@ static isc_result_t
 dns_acl_anyornone(isc_mem_t *mctx, isc_boolean_t neg, dns_acl_t **target) {
 	isc_result_t result;
 	dns_acl_t *acl = NULL;
+
 	result = dns_acl_create(mctx, 0, &acl);
 	if (result != ISC_R_SUCCESS)
 		return (result);
@@ -191,7 +195,7 @@ dns_acl_match(const isc_netaddr_t *reqaddr,
 {
 	isc_uint16_t bitlen, family;
 	isc_prefix_t pfx;
-	isc_radix_node_t *node;
+	isc_radix_node_t *node = NULL;
 	const isc_netaddr_t *addr;
 	isc_netaddr_t v4addr;
 	isc_result_t result;
@@ -264,7 +268,7 @@ dns_acl_match(const isc_netaddr_t *reqaddr,
  * If pos is set to false, then the nested ACL is to be negated.  This
  * means reverse the sense of each *positive* element or IP table node,
  * but leave negatives alone, so as to prevent a double-negative causing
- * an unexpected postive match in the parent ACL.
+ * an unexpected positive match in the parent ACL.
  */
 isc_result_t
 dns_acl_merge(dns_acl_t *dest, dns_acl_t *source, isc_boolean_t pos)
@@ -287,8 +291,8 @@ dns_acl_merge(dns_acl_t *dest, dns_acl_t *source, isc_boolean_t pos)
 			return (ISC_R_NOMEMORY);
 
 		/* Copy in the original elements */
-		memcpy(newmem, dest->elements,
-		       dest->length * sizeof(dns_aclelement_t));
+		memmove(newmem, dest->elements,
+			dest->length * sizeof(dns_aclelement_t));
 
 		/* Release the memory for the old elements array */
 		isc_mem_put(dest->mctx, dest->elements,
@@ -341,7 +345,6 @@ dns_acl_merge(dns_acl_t *dest, dns_acl_t *source, isc_boolean_t pos)
 		}
 	}
 
-
 	/*
 	 * Merge the iptables.  Make sure the destination ACL's
 	 * node_count value is set correctly afterward.
@@ -360,7 +363,7 @@ dns_acl_merge(dns_acl_t *dest, dns_acl_t *source, isc_boolean_t pos)
  * Like dns_acl_match, but matches against the single ACL element 'e'
  * rather than a complete ACL, and returns ISC_TRUE iff it matched.
  *
- * To determine whether the match was prositive or negative, the
+ * To determine whether the match was positive or negative, the
  * caller should examine e->negative.  Since the element 'e' may be
  * a reference to a named ACL or a nested ACL, a matching element
  * returned through 'matchelt' is not necessarily 'e' itself.
@@ -439,6 +442,7 @@ dns_aclelement_match(const isc_netaddr_t *reqaddr,
 void
 dns_acl_attach(dns_acl_t *source, dns_acl_t **target) {
 	REQUIRE(DNS_ACL_VALID(source));
+
 	isc_refcount_increment(&source->refcount, NULL);
 	*target = source;
 }
@@ -446,6 +450,9 @@ dns_acl_attach(dns_acl_t *source, dns_acl_t **target) {
 static void
 destroy(dns_acl_t *dacl) {
 	unsigned int i;
+
+	INSIST(!ISC_LINK_LINKED(dacl, nextincache));
+
 	for (i = 0; i < dacl->length; i++) {
 		dns_aclelement_t *de = &dacl->elements[i];
 		if (de->type == dns_aclelementtype_keyname) {
@@ -463,14 +470,16 @@ destroy(dns_acl_t *dacl) {
 		dns_iptable_detach(&dacl->iptable);
 	isc_refcount_destroy(&dacl->refcount);
 	dacl->magic = 0;
-	isc_mem_put(dacl->mctx, dacl, sizeof(*dacl));
+	isc_mem_putanddetach(&dacl->mctx, dacl, sizeof(*dacl));
 }
 
 void
 dns_acl_detach(dns_acl_t **aclp) {
 	dns_acl_t *acl = *aclp;
 	unsigned int refs;
+
 	REQUIRE(DNS_ACL_VALID(acl));
+
 	isc_refcount_decrement(&acl->refcount, &refs);
 	if (refs == 0)
 		destroy(acl);
@@ -590,6 +599,7 @@ dns_acl_isinsecure(const dns_acl_t *a) {
 isc_result_t
 dns_aclenv_init(isc_mem_t *mctx, dns_aclenv_t *env) {
 	isc_result_t result;
+
 	env->localhost = NULL;
 	env->localnets = NULL;
 	result = dns_acl_create(mctx, 0, &env->localhost);

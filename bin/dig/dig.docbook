@@ -2,7 +2,7 @@
                "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd"
 	       [<!ENTITY mdash "&#8212;">]>
 <!--
- - Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ - Copyright (C) 2004-2011, 2013  Internet Systems Consortium, Inc. ("ISC")
  - Copyright (C) 2000-2003  Internet Software Consortium.
  -
  - Permission to use, copy, modify, and/or distribute this software for any
@@ -18,11 +18,11 @@
  - PERFORMANCE OF THIS SOFTWARE.
 -->
 
-<!-- $Id: dig.docbook,v 1.42 2008/10/13 21:18:56 jreed Exp $ -->
+<!-- $Id: dig.docbook,v 1.51 2011/11/04 11:02:50 jreed Exp $ -->
 <refentry id="man.dig">
 
   <refentryinfo>
-    <date>Jun 30, 2000</date>
+    <date>June 30, 2000</date>
   </refentryinfo>
 
   <refmeta>
@@ -43,6 +43,10 @@
       <year>2006</year>
       <year>2007</year>
       <year>2008</year>
+      <year>2009</year>
+      <year>2010</year>
+      <year>2011</year>
+      <year>2013</year>
       <holder>Internet Systems Consortium, Inc. ("ISC")</holder>
     </copyright>
     <copyright>
@@ -114,9 +118,10 @@
 
     <para>
       Unless it is told to query a specific name server,
-      <command>dig</command> will try each of the servers listed
-      in
-      <filename>/etc/resolv.conf</filename>.
+      <command>dig</command> will try each of the servers listed in
+      <filename>/etc/resolv.conf</filename>. If no usable server addresses
+      are found, <command>dig</command> will send the query to the local
+      host.
     </para>
 
     <para>
@@ -155,20 +160,25 @@
           <term><constant>server</constant></term>
           <listitem>
             <para>
-              is the name or IP address of the name server to query.  This can
-              be an IPv4
-              address in dotted-decimal notation or an IPv6
+              is the name or IP address of the name server to query.  This
+              can be an IPv4 address in dotted-decimal notation or an IPv6
               address in colon-delimited notation.  When the supplied
-              <parameter>server</parameter> argument is a
-              hostname,
-              <command>dig</command> resolves that name before
-              querying that name
-              server.  If no <parameter>server</parameter>
-              argument is provided,
-              <command>dig</command> consults <filename>/etc/resolv.conf</filename>
-              and queries the name servers listed there.  The reply from the
-              name
-              server that responds is displayed.
+              <parameter>server</parameter> argument is a hostname,
+              <command>dig</command> resolves that name before querying
+              that name server.
+            </para>
+            <para>
+              If no <parameter>server</parameter> argument is
+              provided, <command>dig</command> consults
+              <filename>/etc/resolv.conf</filename>; if an
+              address is found there, it queries the name server at
+              that address. If either of the <option>-4</option> or
+              <option>-6</option> options are in use, then
+              only addresses for the corresponding transport
+              will be tried.  If no usable addresses are found,
+              <command>dig</command> will send the query to the
+              local host.  The reply from the name server that
+              responds is displayed.
             </para>
           </listitem>
         </varlistentry>
@@ -449,17 +459,20 @@
 
         <varlistentry>
           <term><option>+[no]adflag</option></term>
-          <listitem>
-            <para>
-              Set [do not set] the AD (authentic data) bit in the query.  The
-              AD bit
-              currently has a standard meaning only in responses, not in
-              queries,
-              but the ability to set the bit in the query is provided for
-              completeness.
-            </para>
-          </listitem>
-        </varlistentry>
+	  <listitem>
+	    <para>
+	      Set [do not set] the AD (authentic data) bit in the
+	      query.  This requests the server to return whether
+	      all of the answer and authority sections have all
+	      been validated as secure according to the security
+	      policy of the server.  AD=1 indicates that all records
+	      have been validated as secure and the answer is not
+	      from a OPT-OUT range.  AD=0 indicate that some part
+	      of the answer was insecure or not validated.  This
+	      bit is set by default.
+	    </para>
+	  </listitem>
+	</varlistentry>
 
         <varlistentry>
           <term><option>+[no]cdflag</option></term>
@@ -493,19 +506,17 @@
 
         <varlistentry>
           <term><option>+[no]recurse</option></term>
-          <listitem>
-            <para>
-              Toggle the setting of the RD (recursion desired) bit in the
-              query.
-              This bit is set by default, which means <command>dig</command>
-              normally sends recursive queries.  Recursion is automatically
-              disabled
-              when the <parameter>+nssearch</parameter> or
-              <parameter>+trace</parameter> query options are
-              used.
-            </para>
-          </listitem>
-        </varlistentry>
+	  <listitem>
+	    <para>
+	      Toggle the setting of the RD (recursion desired) bit
+	      in the query.  This bit is set by default, which means
+	      <command>dig</command> normally sends recursive
+	      queries.  Recursion is automatically disabled when
+	      the <parameter>+nssearch</parameter> or
+	      <parameter>+trace</parameter> query options are used.
+	    </para>
+	  </listitem>
+	</varlistentry>
 
         <varlistentry>
           <term><option>+[no]nssearch</option></term>
@@ -525,20 +536,21 @@
         <varlistentry>
           <term><option>+[no]trace</option></term>
           <listitem>
-            <para>
-              Toggle tracing of the delegation path from the root name servers
-              for
-              the name being looked up.  Tracing is disabled by default.  When
-              tracing is enabled, <command>dig</command> makes
-              iterative queries to
-              resolve the name being looked up.  It will follow referrals from
-              the
-              root servers, showing the answer from each server that was used
-              to
-              resolve the lookup.
-            </para>
-          </listitem>
-        </varlistentry>
+	    <para>
+	      Toggle tracing of the delegation path from the root
+	      name servers for the name being looked up.  Tracing
+	      is disabled by default.  When tracing is enabled,
+	      <command>dig</command> makes iterative queries to
+	      resolve the name being looked up.  It will follow
+	      referrals from the root servers, showing the answer
+	      from each server that was used to resolve the lookup.
+	    </para>
+	    <para>
+	      <command>+dnssec</command> is also set when +trace is
+	      set to better emulate the default queries from a nameserver.
+	    </para>
+	  </listitem>
+	</varlistentry>
 
         <varlistentry>
           <term><option>+[no]cmd</option></term>
@@ -583,8 +595,35 @@
           <listitem>
             <para>
               Toggle the display of comment lines in the output.  The default
-              is to
-              print comments.
+              is to print comments.
+            </para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>+[no]rrcomments</option></term>
+          <listitem>
+            <para>
+              Toggle the display of per-record comments in the output (for
+              example, human-readable key information about DNSKEY records).
+              The default is not to print record comments unless multiline
+              mode is active.
+            </para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term><option>+split=W</option></term>
+          <listitem>
+            <para>
+              Split long hex- or base64-formatted fields in resource
+              records into chunks of <parameter>W</parameter> characters
+              (where <parameter>W</parameter> is rounded up to the nearest
+              multiple of 4).
+              <parameter>+nosplit</parameter> or
+              <parameter>+split=0</parameter> causes fields not to be
+              split at all.  The default is 56 characters, or 44 characters
+              when multiline mode is active.
             </para>
           </listitem>
         </varlistentry>
@@ -744,9 +783,10 @@
 	  <listitem>
 	    <para>
 	       Specify the EDNS version to query with.  Valid values
-	       are 0 to 255.  Setting the EDNS version will cause a
-	       EDNS query to be sent.  <option>+noedns</option> clears the
-	       remembered EDNS version.
+	       are 0 to 255.  Setting the EDNS version will cause
+	       a EDNS query to be sent.  <option>+noedns</option>
+	       clears the remembered EDNS version.  EDNS is set to
+	       0 by default.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -762,6 +802,17 @@
             </para>
           </listitem>
         </varlistentry>
+
+	<varlistentry>
+	  <term><option>+[no]onesoa</option></term>
+	  <listitem>
+	    <para>
+	      Print only one (starting) SOA record when performing
+	      an AXFR. The default is to print both the starting and
+	      ending SOA records.
+	    </para>
+	  </listitem>
+	</varlistentry>
 
         <varlistentry>
           <term><option>+[no]fail</option></term>
@@ -816,7 +867,7 @@
 	      on its own line.
             </para>
 	    <para>
-	      If not specified <command>dig</command> will look for
+	      If not specified, <command>dig</command> will look for
 	      <filename>/etc/trusted-key.key</filename> then
 	      <filename>trusted-key.key</filename> in the current directory.
 	    </para>
@@ -846,6 +897,16 @@
           </listitem>
         </varlistentry>
 
+        <varlistentry>
+          <term><option>+[no]keepopen</option></term>
+          <listitem>
+            <para>
+              Keep the TCP socket open between queries and reuse it rather
+	      than creating a new TCP socket for each lookup.  The default
+	      is <option>+nokeepopen</option>.
+            </para>
+          </listitem>
+        </varlistentry>
 
       </variablelist>
 

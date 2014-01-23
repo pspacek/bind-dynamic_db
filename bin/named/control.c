@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2007, 2009-2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 2001-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: control.c,v 1.33 2007/09/13 04:45:18 each Exp $ */
+/* $Id$ */
 
 /*! \file */
 
@@ -56,12 +56,12 @@ command_compare(const char *text, const char *command) {
 
 /*%
  * This function is called to process the incoming command
- * when a control channel message is received.  
+ * when a control channel message is received.
  */
 isc_result_t
 ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 	isccc_sexpr_t *data;
-	char *command;
+	char *command = NULL;
 	isc_result_t result;
 	int log_level;
 #ifdef HAVE_LIBSCF
@@ -105,7 +105,8 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 	} else if (command_compare(command, NS_COMMAND_REFRESH)) {
 		result = ns_server_refreshcommand(ns_g_server, command, text);
 	} else if (command_compare(command, NS_COMMAND_RETRANSFER)) {
-		result = ns_server_retransfercommand(ns_g_server, command);
+		result = ns_server_retransfercommand(ns_g_server,
+						     command, text);
 	} else if (command_compare(command, NS_COMMAND_HALT)) {
 #ifdef HAVE_LIBSCF
 		/*
@@ -129,11 +130,16 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 		 * isc_app_shutdown below.
 		 */
 #endif
+		/* Do not flush master files */
 		ns_server_flushonshutdown(ns_g_server, ISC_FALSE);
 		ns_os_shutdownmsg(command, text);
 		isc_app_shutdown();
 		result = ISC_R_SUCCESS;
 	} else if (command_compare(command, NS_COMMAND_STOP)) {
+		/*
+		 * "stop" is the same as "halt" except it does
+		 * flush master files.
+		 */
 #ifdef HAVE_LIBSCF
 		if (ns_smf_got_instance == 1 && ns_smf_chroot == 1) {
 			result = ns_smf_add_message(text);
@@ -149,10 +155,12 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 	} else if (command_compare(command, NS_COMMAND_DUMPSTATS)) {
 		result = ns_server_dumpstats(ns_g_server);
 	} else if (command_compare(command, NS_COMMAND_QUERYLOG)) {
-		result = ns_server_togglequerylog(ns_g_server);
+		result = ns_server_togglequerylog(ns_g_server, command);
 	} else if (command_compare(command, NS_COMMAND_DUMPDB)) {
 		ns_server_dumpdb(ns_g_server, command);
 		result = ISC_R_SUCCESS;
+	} else if (command_compare(command, NS_COMMAND_SECROOTS)) {
+		result = ns_server_dumpsecroots(ns_g_server, command);
 	} else if (command_compare(command, NS_COMMAND_TRACE)) {
 		result = ns_server_setdebuglevel(ns_g_server, command);
 	} else if (command_compare(command, NS_COMMAND_NOTRACE)) {
@@ -162,7 +170,9 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 	} else if (command_compare(command, NS_COMMAND_FLUSH)) {
 		result = ns_server_flushcache(ns_g_server, command);
 	} else if (command_compare(command, NS_COMMAND_FLUSHNAME)) {
-		result = ns_server_flushname(ns_g_server, command);
+		result = ns_server_flushnode(ns_g_server, command, ISC_FALSE);
+	} else if (command_compare(command, NS_COMMAND_FLUSHTREE)) {
+		result = ns_server_flushnode(ns_g_server, command, ISC_TRUE);
 	} else if (command_compare(command, NS_COMMAND_STATUS)) {
 		result = ns_server_status(ns_g_server, text);
 	} else if (command_compare(command, NS_COMMAND_TSIGLIST)) {
@@ -170,10 +180,14 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 	} else if (command_compare(command, NS_COMMAND_TSIGDELETE)) {
 		result = ns_server_tsigdelete(ns_g_server, command, text);
 	} else if (command_compare(command, NS_COMMAND_FREEZE)) {
-		result = ns_server_freeze(ns_g_server, ISC_TRUE, command);
+		result = ns_server_freeze(ns_g_server, ISC_TRUE, command,
+					  text);
 	} else if (command_compare(command, NS_COMMAND_UNFREEZE) ||
 		   command_compare(command, NS_COMMAND_THAW)) {
-		result = ns_server_freeze(ns_g_server, ISC_FALSE, command);
+		result = ns_server_freeze(ns_g_server, ISC_FALSE, command,
+					  text);
+	} else if (command_compare(command, NS_COMMAND_SYNC)) {
+		result = ns_server_sync(ns_g_server, command, text);
 	} else if (command_compare(command, NS_COMMAND_RECURSING)) {
 		result = ns_server_dumprecursing(ns_g_server);
 	} else if (command_compare(command, NS_COMMAND_TIMERPOKE)) {
@@ -185,6 +199,15 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 		result = ns_server_notifycommand(ns_g_server, command, text);
 	} else if (command_compare(command, NS_COMMAND_VALIDATION)) {
 		result = ns_server_validation(ns_g_server, command);
+	} else if (command_compare(command, NS_COMMAND_SIGN) ||
+		   command_compare(command, NS_COMMAND_LOADKEYS)) {
+		result = ns_server_rekey(ns_g_server, command, text);
+	} else if (command_compare(command, NS_COMMAND_ADDZONE)) {
+		result = ns_server_add_zone(ns_g_server, command);
+	} else if (command_compare(command, NS_COMMAND_DELZONE)) {
+		result = ns_server_del_zone(ns_g_server, command, text);
+	} else if (command_compare(command, NS_COMMAND_SIGNING)) {
+		result = ns_server_signing(ns_g_server, command, text);
 	} else {
 		isc_log_write(ns_g_lctx, NS_LOGCATEGORY_GENERAL,
 			      NS_LOGMODULE_CONTROL, ISC_LOG_WARNING,

@@ -2,7 +2,7 @@
                "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd"
 	       [<!ENTITY mdash "&#8212;">]>
 <!--
- - Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ - Copyright (C) 2004-2009, 2011, 2013  Internet Systems Consortium, Inc. ("ISC")
  - Copyright (C) 2000, 2001, 2003  Internet Software Consortium.
  -
  - Permission to use, copy, modify, and/or distribute this software for any
@@ -18,10 +18,10 @@
  - PERFORMANCE OF THIS SOFTWARE.
 -->
 
-<!-- $Id: named.docbook,v 1.23 2008/11/06 05:30:24 marka Exp $ -->
+<!-- $Id: named.docbook,v 1.28 2011/11/09 23:46:23 tbox Exp $ -->
 <refentry id="man.named">
   <refentryinfo>
-    <date>June 30, 2000</date>
+    <date>May 21, 2009</date>
   </refentryinfo>
 
   <refmeta>
@@ -42,6 +42,9 @@
       <year>2006</year>
       <year>2007</year>
       <year>2008</year>
+      <year>2009</year>
+      <year>2011</year>
+      <year>2013</year>
       <holder>Internet Systems Consortium, Inc. ("ISC")</holder>
     </copyright>
     <copyright>
@@ -59,6 +62,7 @@
       <arg><option>-6</option></arg>
       <arg><option>-c <replaceable class="parameter">config-file</replaceable></option></arg>
       <arg><option>-d <replaceable class="parameter">debug-level</replaceable></option></arg>
+      <arg><option>-E <replaceable class="parameter">engine-name</replaceable></option></arg>
       <arg><option>-f</option></arg>
       <arg><option>-g</option></arg>
       <arg><option>-m <replaceable class="parameter">flag</replaceable></option></arg>
@@ -67,6 +71,7 @@
       <arg><option>-s</option></arg>
       <arg><option>-S <replaceable class="parameter">#max-socks</replaceable></option></arg>
       <arg><option>-t <replaceable class="parameter">directory</replaceable></option></arg>
+      <arg><option>-U <replaceable class="parameter">#listeners</replaceable></option></arg>
       <arg><option>-u <replaceable class="parameter">user</replaceable></option></arg>
       <arg><option>-v</option></arg>
       <arg><option>-V</option></arg>
@@ -115,6 +120,7 @@
           </para>
         </listitem>
       </varlistentry>
+
       <varlistentry>
         <term>-c <replaceable class="parameter">config-file</replaceable></term>
         <listitem>
@@ -139,6 +145,19 @@
             Set the daemon's debug level to <replaceable class="parameter">debug-level</replaceable>.
             Debugging traces from <command>named</command> become
             more verbose as the debug level increases.
+          </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>-E <replaceable class="parameter">engine-name</replaceable></term>
+        <listitem>
+          <para>
+            Use a crypto hardware (OpenSSL engine) for the crypto operations
+            it supports, for instance re-signing with private keys from
+            a secure key store. When compiled with PKCS#11 support
+            <replaceable class="parameter">engine-name</replaceable>
+            defaults to pkcs11, the empty name resets it to no engine.
           </para>
         </listitem>
       </varlistentry>
@@ -266,6 +285,21 @@
       </varlistentry>
 
       <varlistentry>
+        <term>-U <replaceable class="parameter">#listeners</replaceable></term>
+        <listitem>
+          <para>
+            Use <replaceable class="parameter">#listeners</replaceable>
+            worker threads to listen for incoming UDP packets on each
+            address.  If not specified, <command>named</command> will
+            use the number of detected CPUs.  If <option>-n</option>
+            has been set to a higher value than the number of CPUs,
+            then <option>-U</option> may be increased as high as that
+            value, but no higher.
+          </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term>-u <replaceable class="parameter">user</replaceable></term>
         <listitem>
           <para>Setuid
@@ -374,6 +408,16 @@
       in the
       <citetitle>BIND 9 Administrator Reference Manual</citetitle>.
     </para>
+
+    <para>
+      <command>named</command> inherits the <function>umask</function>
+      (file creation mode mask) from the parent process. If files
+      created by <command>named</command>, such as journal files,
+      need to have custom permissions, the <function>umask</function>
+      should be set explicitly in the script used to start the
+      <command>named</command> process.
+    </para>
+
   </refsect1>
 
   <refsect1>

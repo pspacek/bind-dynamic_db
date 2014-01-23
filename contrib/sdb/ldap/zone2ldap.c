@@ -201,7 +201,7 @@ main (int *argc, char **argv)
   isc_buffer_add (&buff, strlen (argzone));
   dns_fixedname_init (&fixedzone);
   zone = dns_fixedname_name (&fixedzone);
-  result = dns_name_fromtext (zone, &buff, dns_rootname, ISC_FALSE, NULL);
+  result = dns_name_fromtext (zone, &buff, dns_rootname, 0, NULL);
   isc_result_check (result, "dns_name_fromtext");
 
   result = dns_db_create (mctx, "rbt", zone, dns_dbtype_zone,
@@ -328,6 +328,8 @@ main (int *argc, char **argv)
   isc_hash_destroy();
   isc_entropy_detach(&ectx);
   isc_mem_destroy(&mctx);
+  if (zonefile)
+	free(zonefile);
 
   return 0;
 }

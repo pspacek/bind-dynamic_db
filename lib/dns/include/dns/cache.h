@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2007, 2009, 2011, 2013  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2001  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: cache.h,v 1.26 2007/06/19 23:47:16 tbox Exp $ */
+/* $Id: cache.h,v 1.32 2011/08/02 23:47:52 tbox Exp $ */
 
 #ifndef DNS_CACHE_H
 #define DNS_CACHE_H 1
@@ -61,20 +61,42 @@ ISC_LANG_BEGINDECLS
  ***/
 
 isc_result_t
-dns_cache_create(isc_mem_t *mctx, isc_taskmgr_t *taskmgr,
+dns_cache_create(isc_mem_t *cmctx, isc_taskmgr_t *taskmgr,
 		 isc_timermgr_t *timermgr, dns_rdataclass_t rdclass,
 		 const char *db_type, unsigned int db_argc, char **db_argv,
 		 dns_cache_t **cachep);
+isc_result_t
+dns_cache_create2(isc_mem_t *cmctx, isc_taskmgr_t *taskmgr,
+		  isc_timermgr_t *timermgr, dns_rdataclass_t rdclass,
+		  const char *cachename, const char *db_type,
+		  unsigned int db_argc, char **db_argv, dns_cache_t **cachep);
+isc_result_t
+dns_cache_create3(isc_mem_t *cmctx, isc_mem_t *hmctx, isc_taskmgr_t *taskmgr,
+		  isc_timermgr_t *timermgr, dns_rdataclass_t rdclass,
+		  const char *cachename, const char *db_type,
+		  unsigned int db_argc, char **db_argv, dns_cache_t **cachep);
 /*%<
  * Create a new DNS cache.
  *
+ * dns_cache_create2() will create a named cache.
+ *
+ * dns_cache_create3() will create a named cache using two separate memory
+ * contexts, one for cache data which can be cleaned and a separate one for
+ * memory allocated for the heap (which can grow without an upper limit and
+ * has no mechanism for shrinking).
+ *
+ * dns_cache_create() is a backward compatible version that internally
+ * specifies an empty cache name and a single memory context.
+ *
  * Requires:
  *
- *\li	'mctx' is a valid memory context
+ *\li	'cmctx' (and 'hmctx' if applicable) is a valid memory context.
  *
  *\li	'taskmgr' is a valid task manager and 'timermgr' is a valid timer
  * 	manager, or both are NULL.  If NULL, no periodic cleaning of the
  * 	cache will take place.
+ *
+ *\li	'cachename' is a valid string.  This must not be NULL.
  *
  *\li	'cachep' is a valid pointer, and *cachep == NULL
  *
@@ -217,10 +239,28 @@ dns_cache_setcleaninginterval(dns_cache_t *cache, unsigned int interval);
  * Set the periodic cache cleaning interval to 'interval' seconds.
  */
 
+unsigned int
+dns_cache_getcleaninginterval(dns_cache_t *cache);
+/*%<
+ * Get the periodic cache cleaning interval to 'interval' seconds.
+ */
+
+const char *
+dns_cache_getname(dns_cache_t *cache);
+/*%<
+ * Get the cache name.
+ */
+
 void
-dns_cache_setcachesize(dns_cache_t *cache, isc_uint32_t size);
+dns_cache_setcachesize(dns_cache_t *cache, size_t size);
 /*%<
  * Set the maximum cache size.  0 means unlimited.
+ */
+
+size_t
+dns_cache_getcachesize(dns_cache_t *cache);
+/*%<
+ * Get the maximum cache size.
  */
 
 isc_result_t
@@ -234,9 +274,27 @@ dns_cache_flush(dns_cache_t *cache);
  */
 
 isc_result_t
+dns_cache_flushnode(dns_cache_t *cache, dns_name_t *name,
+		    isc_boolean_t tree);
+/*
+ * Flush a given name from the cache.  If 'tree' is true, then
+ * also flush all names under 'name'.
+ *
+ * Requires:
+ *\li	'cache' to be valid.
+ *\li	'name' to be valid.
+ *
+ * Returns:
+ *\li	#ISC_R_SUCCESS
+ *\li	#ISC_R_NOMEMORY
+ *\li	other error returns.
+ */
+
+isc_result_t
 dns_cache_flushname(dns_cache_t *cache, dns_name_t *name);
 /*
- * Flushes a given name from the cache.
+ * Flush a given name from the cache.  Equivalent to
+ * dns_cache_flushpartial(cache, name, ISC_FALSE).
  *
  * Requires:
  *\li	'cache' to be valid.

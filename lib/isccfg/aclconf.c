@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2012  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: aclconf.c,v 1.22 2008/10/24 02:28:55 each Exp $ */
+/* $Id$ */
 
 #include <config.h>
 
@@ -33,22 +33,68 @@
 
 #define LOOP_MAGIC ISC_MAGIC('L','O','O','P')
 
-void
-cfg_aclconfctx_init(cfg_aclconfctx_t *ctx) {
-	ISC_LIST_INIT(ctx->named_acl_cache);
+isc_result_t
+cfg_aclconfctx_create(isc_mem_t *mctx, cfg_aclconfctx_t **ret) {
+	isc_result_t result;
+	cfg_aclconfctx_t *actx;
+
+	REQUIRE(mctx != NULL);
+	REQUIRE(ret != NULL && *ret == NULL);
+
+	actx = isc_mem_get(mctx, sizeof(*actx));
+	if (actx == NULL)
+		return (ISC_R_NOMEMORY);
+
+	result = isc_refcount_init(&actx->references, 1);
+	if (result != ISC_R_SUCCESS)
+		goto cleanup;
+
+	actx->mctx = NULL;
+	isc_mem_attach(mctx, &actx->mctx);
+	ISC_LIST_INIT(actx->named_acl_cache);
+
+	*ret = actx;
+	return (ISC_R_SUCCESS);
+
+ cleanup:
+	isc_mem_put(mctx, actx, sizeof(*actx));
+	return (result);
 }
 
 void
-cfg_aclconfctx_destroy(cfg_aclconfctx_t *ctx) {
-	dns_acl_t *dacl, *next;
+cfg_aclconfctx_attach(cfg_aclconfctx_t *src, cfg_aclconfctx_t **dest) {
+	REQUIRE(src != NULL);
+	REQUIRE(dest != NULL && *dest == NULL);
 
-	for (dacl = ISC_LIST_HEAD(ctx->named_acl_cache);
-	     dacl != NULL;
-	     dacl = next)
-	{
-		next = ISC_LIST_NEXT(dacl, nextincache);
-		dns_acl_detach(&dacl);
+	isc_refcount_increment(&src->references, NULL);
+	*dest = src;
+}
+
+void
+cfg_aclconfctx_detach(cfg_aclconfctx_t **actxp) {
+	cfg_aclconfctx_t *actx;
+	dns_acl_t *dacl, *next;
+	unsigned int refs;
+
+	REQUIRE(actxp != NULL && *actxp != NULL);
+
+	actx = *actxp;
+
+	isc_refcount_decrement(&actx->references, &refs);
+	if (refs == 0) {
+		for (dacl = ISC_LIST_HEAD(actx->named_acl_cache);
+		     dacl != NULL;
+		     dacl = next)
+		{
+			next = ISC_LIST_NEXT(dacl, nextincache);
+			ISC_LIST_UNLINK(actx->named_acl_cache, dacl,
+					nextincache);
+			dns_acl_detach(&dacl);
+		}
+		isc_mem_putanddetach(&actx->mctx, actx, sizeof(*actx));
 	}
+
+	*actxp = NULL;
 }
 
 /*
@@ -146,11 +192,11 @@ convert_keyname(const cfg_obj_t *keyobj, isc_log_t *lctx, isc_mem_t *mctx,
 	const char *txtname = cfg_obj_asstring(keyobj);
 
 	keylen = strlen(txtname);
-	isc_buffer_init(&buf, txtname, keylen);
+	isc_buffer_constinit(&buf, txtname, keylen);
 	isc_buffer_add(&buf, keylen);
 	dns_fixedname_init(&fixname);
 	result = dns_name_fromtext(dns_fixedname_name(&fixname), &buf,
-				   dns_rootname, ISC_FALSE, NULL);
+				   dns_rootname, 0, NULL);
 	if (result != ISC_R_SUCCESS) {
 		cfg_obj_log(keyobj, lctx, ISC_LOG_WARNING,
 			    "key name '%s' is not a valid domain name",
@@ -168,12 +214,16 @@ convert_keyname(const cfg_obj_t *keyobj, isc_log_t *lctx, isc_mem_t *mctx,
  * parent.
  */
 static int
-count_acl_elements(const cfg_obj_t *caml, const cfg_obj_t *cctx)
+count_acl_elements(const cfg_obj_t *caml, const cfg_obj_t *cctx,
+		   isc_boolean_t *has_negative)
 {
 	const cfg_listelt_t *elt;
 	const cfg_obj_t *cacl = NULL;
 	isc_result_t result;
 	int n = 0;
+
+	if (has_negative != NULL)
+		*has_negative = ISC_FALSE;
 
 	for (elt = cfg_list_first(caml);
 	     elt != NULL;
@@ -181,13 +231,19 @@ count_acl_elements(const cfg_obj_t *caml, const cfg_obj_t *cctx)
 		const cfg_obj_t *ce = cfg_listelt_value(elt);
 
 		/* negated element; just get the value. */
-		if (cfg_obj_istuple(ce))
+		if (cfg_obj_istuple(ce)) {
 			ce = cfg_tuple_get(ce, "value");
+			if (has_negative != NULL)
+				*has_negative = ISC_TRUE;
+		}
 
 		if (cfg_obj_istype(ce, &cfg_type_keyref)) {
 			n++;
 		} else if (cfg_obj_islist(ce)) {
-			n += count_acl_elements(ce, cctx);
+			isc_boolean_t negative;
+			n += count_acl_elements(ce, cctx, &negative);
+			if (negative)
+				n++;
 		} else if (cfg_obj_isstring(ce)) {
 			const char *name = cfg_obj_asstring(ce);
 			if (strcasecmp(name, "localhost") == 0 ||
@@ -197,7 +253,8 @@ count_acl_elements(const cfg_obj_t *caml, const cfg_obj_t *cctx)
 				   strcasecmp(name, "none") != 0) {
 				result = get_acl_def(cctx, name, &cacl);
 				if (result == ISC_R_SUCCESS)
-					n += count_acl_elements(cacl, cctx) + 1;
+					n += count_acl_elements(cacl, cctx,
+								NULL) + 1;
 			}
 		}
 	}
@@ -240,13 +297,13 @@ cfg_acl_fromconfig(const cfg_obj_t *caml,
 		/*
 		 * Need to allocate a new ACL structure.  Count the items
 		 * in the ACL definition that will require space in the
-		 * elemnts table.  (Note that if nest_level is nonzero,
+		 * elements table.  (Note that if nest_level is nonzero,
 		 * *everything* goes in the elements table.)
 		 */
 		int nelem;
 
 		if (nest_level == 0)
-			nelem = count_acl_elements(caml, cctx);
+			nelem = count_acl_elements(caml, cctx, NULL);
 		else
 			nelem = cfg_list_length(caml, ISC_FALSE);
 

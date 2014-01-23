@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2007  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2005, 2007, 2009-2012  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: ds_43.c,v 1.12 2007/06/18 23:47:43 tbox Exp $ */
+/* $Id$ */
 
 /* draft-ietf-dnsext-delegation-signer-05.txt */
 
@@ -74,12 +74,23 @@ fromtext_ds(ARGS_FROMTEXT) {
 	/*
 	 * Digest.
 	 */
-	if (c == DNS_DSDIGEST_SHA1)
+	switch (c) {
+	case DNS_DSDIGEST_SHA1:
 		length = ISC_SHA1_DIGESTLENGTH;
-	else if (c == DNS_DSDIGEST_SHA256)
+		break;
+	case DNS_DSDIGEST_SHA256:
 		length = ISC_SHA256_DIGESTLENGTH;
-	else
+		break;
+	case DNS_DSDIGEST_GOST:
+		length = ISC_GOST_DIGESTLENGTH;
+		break;
+	case DNS_DSDIGEST_SHA384:
+		length = ISC_SHA384_DIGESTLENGTH;
+		break;
+	default:
 		length = -1;
+		break;
+	}
 	return (isc_hex_tobuffer(lexer, target, length));
 }
 
@@ -126,7 +137,11 @@ totext_ds(ARGS_TOTEXT) {
 	if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(" (", target));
 	RETERR(str_totext(tctx->linebreak, target));
-	RETERR(isc_hex_totext(&sr, tctx->width - 2, tctx->linebreak, target));
+	if (tctx->width == 0) /* No splitting */
+		RETERR(isc_hex_totext(&sr, 0, "", target));
+	else
+		RETERR(isc_hex_totext(&sr, tctx->width - 2,
+				      tctx->linebreak, target));
 	if ((tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
 		RETERR(str_totext(" )", target));
 	return (ISC_R_SUCCESS);
@@ -152,7 +167,11 @@ fromwire_ds(ARGS_FROMWIRE) {
 	    (sr.base[3] == DNS_DSDIGEST_SHA1 &&
 	     sr.length < 4 + ISC_SHA1_DIGESTLENGTH) ||
 	    (sr.base[3] == DNS_DSDIGEST_SHA256 &&
-	     sr.length < 4 + ISC_SHA256_DIGESTLENGTH))
+	     sr.length < 4 + ISC_SHA256_DIGESTLENGTH) ||
+	    (sr.base[3] == DNS_DSDIGEST_GOST &&
+	     sr.length < 4 + ISC_GOST_DIGESTLENGTH) ||
+	    (sr.base[3] == DNS_DSDIGEST_SHA384 &&
+	     sr.length < 4 + ISC_SHA384_DIGESTLENGTH))
 		return (ISC_R_UNEXPECTEDEND);
 
 	/*
@@ -164,6 +183,10 @@ fromwire_ds(ARGS_FROMWIRE) {
 		sr.length = 4 + ISC_SHA1_DIGESTLENGTH;
 	else if (sr.base[3] == DNS_DSDIGEST_SHA256)
 		sr.length = 4 + ISC_SHA256_DIGESTLENGTH;
+	else if (sr.base[3] == DNS_DSDIGEST_GOST)
+		sr.length = 4 + ISC_GOST_DIGESTLENGTH;
+	else if (sr.base[3] == DNS_DSDIGEST_SHA384)
+		sr.length = 4 + ISC_SHA384_DIGESTLENGTH;
 
 	isc_buffer_forward(source, sr.length);
 	return (mem_tobuffer(target, sr.base, sr.length));
@@ -212,6 +235,12 @@ fromstruct_ds(ARGS_FROMSTRUCT) {
 		break;
 	case DNS_DSDIGEST_SHA256:
 		REQUIRE(ds->length == ISC_SHA256_DIGESTLENGTH);
+		break;
+	case DNS_DSDIGEST_GOST:
+		REQUIRE(ds->length == ISC_GOST_DIGESTLENGTH);
+		break;
+	case DNS_DSDIGEST_SHA384:
+		REQUIRE(ds->length == ISC_SHA384_DIGESTLENGTH);
 		break;
 	}
 
@@ -316,6 +345,11 @@ checknames_ds(ARGS_CHECKNAMES) {
 	UNUSED(bad);
 
 	return (ISC_TRUE);
+}
+
+static inline int
+casecompare_ds(ARGS_COMPARE) {
+	return (compare_ds(rdata1, rdata2));
 }
 
 #endif	/* RDATA_GENERIC_DS_43_C */

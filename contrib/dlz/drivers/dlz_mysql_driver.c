@@ -743,12 +743,15 @@ mysql_authority(const char *zone, void *driverarg, void *dbdata,
 /*% if zone is supported, lookup up a (or multiple) record(s) in it */
 static isc_result_t
 mysql_lookup(const char *zone, const char *name, void *driverarg,
-	     void *dbdata, dns_sdlzlookup_t *lookup)
+	     void *dbdata, dns_sdlzlookup_t *lookup,
+	     dns_clientinfomethods_t *methods, dns_clientinfo_t *clientinfo)
 {
 	isc_result_t result;
 	MYSQL_RES *rs = NULL;
 
 	UNUSED(driverarg);
+	UNUSED(methods);
+	UNUSED(clientinfo);
 
 	/* run the query and get the result set from the database. */
 	result = mysql_get_resultset(zone, name, NULL, LOOKUP, dbdata, &rs);
@@ -792,6 +795,9 @@ mysql_create(const char *dlzname, unsigned int argc, char *argv[],
 	char *endp;
 	int j;
 	unsigned int flags = 0;
+#if MYSQL_VERSION_ID >= 50000
+        my_bool auto_reconnect = 1;
+#endif
 
 	UNUSED(driverarg);
 	UNUSED(dlzname);
@@ -880,7 +886,7 @@ mysql_create(const char *dlzname, unsigned int argc, char *argv[],
 			      "mysql driver could not create "
 			      "database instance object.");
 		result = ISC_R_FAILURE;
-		goto full_cleanup;
+		goto cleanup;
 	}
 
 	/* create and set db connection */
@@ -923,6 +929,17 @@ mysql_create(const char *dlzname, unsigned int argc, char *argv[],
 	pass = getParameterValue(argv[1], "pass=");
 	socket = getParameterValue(argv[1], "socket=");
 
+#if MYSQL_VERSION_ID >= 50000
+	/* enable automatic reconnection. */
+        if (mysql_options((MYSQL *) dbi->dbconn, MYSQL_OPT_RECONNECT,
+			  &auto_reconnect) != 0) {
+		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
+			      DNS_LOGMODULE_DLZ, ISC_LOG_WARNING,
+			      "mysql driver failed to set "
+			      "MYSQL_OPT_RECONNECT option, continuing");
+	}
+#endif
+
 	for (j=0; dbc == NULL && j < 4; j++)
 		dbc = mysql_real_connect((MYSQL *) dbi->dbconn, host,
 					 user, pass, dbname, port, socket,
@@ -946,7 +963,8 @@ mysql_create(const char *dlzname, unsigned int argc, char *argv[],
 
  full_cleanup:
 
-	destroy_sqldbinstance(dbi);
+	if (dbi != NULL)
+		destroy_sqldbinstance(dbi);
 
  cleanup:
 
@@ -999,7 +1017,14 @@ static dns_sdlzmethods_t dlz_mysql_methods = {
 	mysql_lookup,
 	mysql_authority,
 	mysql_allnodes,
-	mysql_allowzonexfr
+	mysql_allowzonexfr,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
 };
 
 /*%

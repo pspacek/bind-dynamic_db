@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2012  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 2000-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,13 +15,17 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: check-tool.c,v 1.35 2008/10/24 00:28:00 marka Exp $ */
+/* $Id: check-tool.c,v 1.44 2011/12/22 07:32:39 each Exp $ */
 
 /*! \file */
 
 #include <config.h>
 
 #include <stdio.h>
+
+#ifdef _WIN32
+#include <Winsock2.h>
+#endif
 
 #include "check-tool.h"
 #include <isc/buffer.h>
@@ -115,6 +119,7 @@ static isc_logcategory_t categories[] = {
 	{ "queries",	     0 },
 	{ "unmatched", 	     0 },
 	{ "update-security", 0 },
+	{ "query-errors",    0 },
 	{ NULL,		     0 }
 };
 
@@ -191,6 +196,10 @@ checkns(dns_zone_t *zone, dns_name_t *name, dns_name_t *owner,
 		a->type == dns_rdatatype_a);
 	REQUIRE(aaaa == NULL || !dns_rdataset_isassociated(aaaa) ||
 		aaaa->type == dns_rdatatype_aaaa);
+
+	if (a == NULL || aaaa == NULL)
+		return (answer);
+
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = AI_CANONNAME;
 	hints.ai_family = PF_UNSPEC;
@@ -217,8 +226,8 @@ checkns(dns_zone_t *zone, dns_name_t *name, dns_name_t *owner,
 		while (cur != NULL && cur->ai_canonname == NULL &&
 		       cur->ai_next != NULL)
 			cur = cur->ai_next;
-		if (ai != NULL && cur->ai_canonname != NULL &&
-		    strcasecmp(ai->ai_canonname, namebuf) != 0 &&
+		if (cur != NULL && cur->ai_canonname != NULL &&
+		    strcasecmp(cur->ai_canonname, namebuf) != 0 &&
 		    !logged(namebuf, ERR_IS_CNAME)) {
 			dns_zone_log(zone, ISC_LOG_ERROR,
 				     "%s/NS '%s' (out of zone) "
@@ -253,8 +262,7 @@ checkns(dns_zone_t *zone, dns_name_t *name, dns_name_t *owner,
 		}
 		return (ISC_TRUE);
 	}
-	if (a == NULL || aaaa == NULL)
-		return (answer);
+
 	/*
 	 * Check that all glue records really exist.
 	 */
@@ -592,12 +600,11 @@ load_zone(isc_mem_t *mctx, const char *zonename, const char *filename,
 
 	dns_zone_settype(zone, dns_zone_master);
 
-	isc_buffer_init(&buffer, zonename, strlen(zonename));
+	isc_buffer_constinit(&buffer, zonename, strlen(zonename));
 	isc_buffer_add(&buffer, strlen(zonename));
 	dns_fixedname_init(&fixorigin);
 	origin = dns_fixedname_name(&fixorigin);
-	CHECK(dns_name_fromtext(origin, &buffer, dns_rootname,
-				ISC_FALSE, NULL));
+	CHECK(dns_name_fromtext(origin, &buffer, dns_rootname, 0, NULL));
 	CHECK(dns_zone_setorigin(zone, origin));
 	CHECK(dns_zone_setdbtype(zone, 1, (const char * const *) dbtype));
 	CHECK(dns_zone_setfile2(zone, filename, fileformat));
@@ -631,10 +638,14 @@ load_zone(isc_mem_t *mctx, const char *zonename, const char *filename,
 /*% dump the zone */
 isc_result_t
 dump_zone(const char *zonename, dns_zone_t *zone, const char *filename,
-	  dns_masterformat_t fileformat, const dns_master_style_t *style)
+	  dns_masterformat_t fileformat, const dns_master_style_t *style,
+	  const isc_uint32_t rawversion)
 {
 	isc_result_t result;
 	FILE *output = stdout;
+	const char *flags;
+
+	flags = (fileformat == dns_masterformat_text) ? "w+" : "wb+";
 
 	if (debug) {
 		if (filename != NULL && strcmp(filename, "-") != 0)
@@ -645,7 +656,7 @@ dump_zone(const char *zonename, dns_zone_t *zone, const char *filename,
 	}
 
 	if (filename != NULL && strcmp(filename, "-") != 0) {
-		result = isc_stdio_open(filename, "w+", &output);
+		result = isc_stdio_open(filename, flags, &output);
 
 		if (result != ISC_R_SUCCESS) {
 			fprintf(stderr, "could not open output "
@@ -654,10 +665,33 @@ dump_zone(const char *zonename, dns_zone_t *zone, const char *filename,
 		}
 	}
 
-	result = dns_zone_dumptostream2(zone, output, fileformat, style);
-
+	result = dns_zone_dumptostream3(zone, output, fileformat, style,
+					rawversion);
 	if (output != stdout)
 		(void)isc_stdio_close(output);
 
 	return (result);
 }
+
+#ifdef _WIN32
+void
+InitSockets(void) {
+	WORD wVersionRequested;
+	WSADATA wsaData;
+	int err;
+
+	wVersionRequested = MAKEWORD(2, 0);
+
+	err = WSAStartup( wVersionRequested, &wsaData );
+	if (err != 0) {
+		fprintf(stderr, "WSAStartup() failed: %d\n", err);
+		exit(1);
+	}
+}
+
+void
+DestroySockets(void) {
+	WSACleanup();
+}
+#endif
+

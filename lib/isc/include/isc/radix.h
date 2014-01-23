@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2007, 2008, 2013, 2014  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +14,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: radix.h,v 1.11 2008/09/26 21:12:02 each Exp $ */
+/* $Id: radix.h,v 1.13 2008/12/01 23:47:45 tbox Exp $ */
 
 /*
  * This source was adapted from MRT's RCS Ids:
@@ -41,10 +41,10 @@
 			(pt).family = (na)->family; \
 			(pt).bitlen = (bits); \
 			if ((pt).family == AF_INET6) { \
-				memcpy(&(pt).add.sin6, &(na)->type.in6, \
+				memmove(&(pt).add.sin6, &(na)->type.in6, \
 				       ((bits)+7)/8); \
 			} else \
-				memcpy(&(pt).add.sin, &(na)->type.in, \
+				memmove(&(pt).add.sin, &(na)->type.in, \
 				       ((bits)+7)/8); \
 		} else { \
 			(pt).family = AF_UNSPEC; \
@@ -54,13 +54,14 @@
 	} while(0)
 
 typedef struct isc_prefix {
-    unsigned int family;	/* AF_INET | AF_INET6, or AF_UNSPEC for "any" */
-    unsigned int bitlen;	/* 0 for "any" */
-    isc_refcount_t refcount;
-    union {
+	isc_mem_t *mctx;
+	unsigned int family;	/* AF_INET | AF_INET6, or AF_UNSPEC for "any" */
+	unsigned int bitlen;	/* 0 for "any" */
+	isc_refcount_t refcount;
+	union {
 		struct in_addr sin;
 		struct in6_addr sin6;
-    } add;
+	} add;
 } isc_prefix_t;
 
 typedef void (*isc_radix_destroyfunc_t)(void *);
@@ -90,12 +91,13 @@ typedef void (*isc_radix_processfunc_t)(isc_prefix_t *, void **);
 
 #define ISC_IS6(family) ((family) == AF_INET6 ? 1 : 0)
 typedef struct isc_radix_node {
-   isc_uint32_t bit;			/* bit length of the prefix */
-   isc_prefix_t *prefix;		/* who we are in radix tree */
-   struct isc_radix_node *l, *r;	/* left and right children */
-   struct isc_radix_node *parent;	/* may be used */
-   void *data[2];			/* pointers to IPv4 and IPV6 data */
-   int node_num[2];			/* which node this was in the tree,
+	isc_mem_t *mctx;
+	isc_uint32_t bit;		/* bit length of the prefix */
+	isc_prefix_t *prefix;		/* who we are in radix tree */
+	struct isc_radix_node *l, *r;	/* left and right children */
+	struct isc_radix_node *parent;	/* may be used */
+	void *data[2];			/* pointers to IPv4 and IPV6 data */
+	int node_num[2];		/* which node this was in the tree,
 					   or -1 for glue nodes */
 } isc_radix_node_t;
 
@@ -103,33 +105,92 @@ typedef struct isc_radix_node {
 #define RADIX_TREE_VALID(a)      ISC_MAGIC_VALID(a, RADIX_TREE_MAGIC);
 
 typedef struct isc_radix_tree {
-   unsigned int		magic;
-   isc_mem_t		*mctx;
-   isc_radix_node_t 	*head;
-   isc_uint32_t		maxbits;	/* for IP, 32 bit addresses */
-   int num_active_node;			/* for debugging purposes */
-   int num_added_node;			/* total number of nodes */
+	unsigned int magic;
+	isc_mem_t *mctx;
+	isc_radix_node_t *head;
+	isc_uint32_t maxbits;		/* for IP, 32 bit addresses */
+	int num_active_node;		/* for debugging purposes */
+	int num_added_node;		/* total number of nodes */
 } isc_radix_tree_t;
 
+isc_result_t
+isc_radix_search(isc_radix_tree_t *radix, isc_radix_node_t **target,
+		 isc_prefix_t *prefix);
+/*%<
+ * Search 'radix' for the best match to 'prefix'.
+ * Return the node found in '*target'.
+ *
+ * Requires:
+ * \li	'radix' to be valid.
+ * \li	'target' is not NULL and "*target" is NULL.
+ * \li	'prefix' to be valid.
+ *
+ * Returns:
+ * \li	ISC_R_NOTFOUND
+ * \li	ISC_R_SUCCESS
+ */
 
 isc_result_t
-isc_radix_search(isc_radix_tree_t *radix, isc_radix_node_t **target, isc_prefix_t *prefix);
-
-isc_result_t
-isc_radix_insert(isc_radix_tree_t *radix, isc_radix_node_t **target, isc_radix_node_t *source, isc_prefix_t *prefix);
+isc_radix_insert(isc_radix_tree_t *radix, isc_radix_node_t **target,
+		 isc_radix_node_t *source, isc_prefix_t *prefix);
+/*%<
+ * Insert 'source' or 'prefix' into the radix tree 'radix'.
+ * Return the node added in 'target'.
+ *
+ * Requires:
+ * \li	'radix' to be valid.
+ * \li	'target' is not NULL and "*target" is NULL.
+ * \li	'prefix' to be valid or 'source' to be non NULL and contain
+ *	a valid prefix.
+ *
+ * Returns:
+ * \li	ISC_R_NOMEMORY
+ * \li	ISC_R_SUCCESS
+ */
 
 void
 isc_radix_remove(isc_radix_tree_t *radix, isc_radix_node_t *node);
+/*%<
+ * Remove the node 'node' from the radix tree 'radix'.
+ *
+ * Requires:
+ * \li	'radix' to be valid.
+ * \li	'node' to be valid.
+ */
 
 isc_result_t
 isc_radix_create(isc_mem_t *mctx, isc_radix_tree_t **target, int maxbits);
+/*%<
+ * Create a radix tree with a maximum depth of 'maxbits';
+ *
+ * Requires:
+ * \li	'mctx' to be valid.
+ * \li	'target' to be non NULL and '*target' to be NULL.
+ * \li	'maxbits' to be less than or equal to RADIX_MAXBITS.
+ *
+ * Returns:
+ * \li	ISC_R_NOMEMORY
+ * \li	ISC_R_SUCCESS
+ */
 
 void
 isc_radix_destroy(isc_radix_tree_t *radix, isc_radix_destroyfunc_t func);
+/*%<
+ * Destroy a radix tree optionally calling 'func' to clean up node data.
+ *
+ * Requires:
+ * \li	'radix' to be valid.
+ */
 
 void
 isc_radix_process(isc_radix_tree_t *radix, isc_radix_processfunc_t func);
-
+/*%<
+ * Walk a radix tree calling 'func' to process node data.
+ *
+ * Requires:
+ * \li	'radix' to be valid.
+ * \li	'func' to point to a function.
+ */
 
 #define RADIX_MAXBITS 128
 #define RADIX_NBIT(x)        (0x80 >> ((x) & 0x7f))
