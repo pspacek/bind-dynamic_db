@@ -1,3 +1,10 @@
+BIND 9.9.5rc2 with dynamic_db patches
+
+Dynamic_db patches allow you to use home-grown database backends for BIND 9.
+
+See http://fedorahosted.org/bind-dyndb-ldap/ for all the details.
+
+--- original README from BIND 9.9.5rc2 follows ---
 BIND 9
 
 	BIND version 9 is a major rewrite of nearly all aspects of the
