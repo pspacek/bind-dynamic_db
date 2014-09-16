@@ -280,9 +280,15 @@ dns_dyndb_arguments_create(isc_mem_t *mctx)
 }
 
 void
-dns_dyndb_arguments_destroy(isc_mem_t *mctx, dns_dyndb_arguments_t *args)
+dns_dyndb_arguments_destroy(isc_mem_t *mctx, dns_dyndb_arguments_t **argsp)
 {
-	REQUIRE(args != NULL);
+	dns_dyndb_arguments_t *args;
+
+	REQUIRE(argsp != NULL);
+
+	args = *argsp;
+	if (args == NULL)
+		return;
 
 	dns_dyndb_set_view(args, NULL);
 	dns_dyndb_set_zonemgr(args, NULL);
@@ -290,6 +296,8 @@ dns_dyndb_arguments_destroy(isc_mem_t *mctx, dns_dyndb_arguments_t *args)
 	dns_dyndb_set_timermgr(args, NULL);
 
 	isc_mem_put(mctx, args, sizeof(*args));
+
+	*argsp = NULL;
 }
 
 void

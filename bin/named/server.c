@@ -2178,6 +2178,7 @@ configure_view(dns_view_t *view, cfg_obj_t *config, cfg_obj_t *vconfig,
 	unsigned int query_timeout, ndisp;
 	struct cfg_context *nzctx;
 	dns_rpz_zone_t *rpz;
+	dns_dyndb_arguments_t *args = NULL;
 
 	REQUIRE(DNS_VIEW_VALID(view));
 
@@ -3341,8 +3342,6 @@ configure_view(dns_view_t *view, cfg_obj_t *config, cfg_obj_t *vconfig,
 		(void)cfg_map_get(config, "dynamic-db", &dynamic_db_list);
 	element = cfg_list_first(dynamic_db_list);
 	if (element != NULL) {
-		dns_dyndb_arguments_t *args;
-
 		args = dns_dyndb_arguments_create(mctx);
 		if (args == NULL) {
 			result = ISC_R_NOMEMORY;
@@ -3355,11 +3354,8 @@ configure_view(dns_view_t *view, cfg_obj_t *config, cfg_obj_t *vconfig,
 		while (element != NULL) {
 			obj = cfg_listelt_value(element);
 			CHECK(configure_dynamic_db(obj, mctx, args));
-
 			element = cfg_list_next(element);
 		}
-
-		dns_dyndb_arguments_destroy(mctx, args);
 	}
 
 	/*
@@ -3547,6 +3543,8 @@ configure_view(dns_view_t *view, cfg_obj_t *config, cfg_obj_t *vconfig,
 
 	if (cache != NULL)
 		dns_cache_detach(&cache);
+	if (args != NULL)
+		dns_dyndb_arguments_destroy(mctx, &args);
 
 	return (result);
 }
