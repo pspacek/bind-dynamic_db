@@ -1308,6 +1308,11 @@ configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
 	CHECK(dns_dynamic_db_load(libname, name, mctx, argv, dyndb_args));
 
 cleanup:
+	if (result != ISC_R_SUCCESS)
+		isc_log_write(ns_g_lctx, NS_LOGCATEGORY_GENERAL,
+		              NS_LOGMODULE_SERVER, ISC_LOG_ERROR,
+		              "dynamic database '%s' configuration failed: %s",
+		              name, isc_result_totext(result));
 	if (argv != NULL)
 		isc_mem_free(mctx, argv);
 
